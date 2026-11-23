@@ -1,10 +1,23 @@
 <?xml version="1.0"?>
 <!--
   Aegis user machine definition for E3SM/CIME (Phase 0: ELM on Apple silicon).
-  Based on the upstream E3SM "mac" machine entry. All toolchain components
-  (gcc/gfortran, clang, MPICH, HDF5, NetCDF-C/Fortran, PnetCDF, cmake, make,
-  perl, python) come from the conda-forge env at AEGIS_E3SM_ENV below.
+  Based on the upstream E3SM "mac" machine entry. Compilers (clang, gfortran),
+  MPICH, HDF5, NetCDF-C/Fortran, PnetCDF, MOAB, cmake, make, perl and python
+  come from the conda-forge env named by the "condaenv" entity below; the
+  macOS SDK (system headers/libs, Accelerate BLAS/LAPACK) comes from the
+  Xcode Command Line Tools.
+
+  Edit the two entities for another machine. CIME resolves all $ENV{...}
+  references in <environment_variables> before setting any of them, so the
+  prefix cannot be derived from AEGIS_E3SM_ENV inside this block; XML
+  entities keep it in one place instead.
+  Also machine/user-specific: MAX_TASKS_PER_NODE, MAX_MPITASKS_PER_NODE and
+  GMAKE_J (6 here, leaving cores for a self-hosted CI runner) and SUPPORTED_BY.
 -->
+<!DOCTYPE config_machines [
+  <!ENTITY condaenv "/Volumes/SSD-Data/aegis-data/conda-envs/e3sm">
+  <!ENTITY work "/Volumes/SSD-Data/aegis-data/e3sm-work">
+]>
 <config_machines version="2.0">
   <machine MACH="aegis-mac">
     <DESC>Aegis Apple-silicon MacBook (osx-arm64), conda-forge gnu + MPICH toolchain</DESC>
@@ -12,11 +25,11 @@
     <OS>Darwin</OS>
     <COMPILERS>gnu</COMPILERS>
     <MPILIBS>mpich</MPILIBS>
-    <CIME_OUTPUT_ROOT>/Volumes/SSD-Data/aegis-data/e3sm-work/scratch</CIME_OUTPUT_ROOT>
-    <DIN_LOC_ROOT>/Volumes/SSD-Data/aegis-data/e3sm-work/inputdata</DIN_LOC_ROOT>
-    <DIN_LOC_ROOT_CLMFORC>/Volumes/SSD-Data/aegis-data/e3sm-work/inputdata/atm/datm7</DIN_LOC_ROOT_CLMFORC>
-    <DOUT_S_ROOT>/Volumes/SSD-Data/aegis-data/e3sm-work/scratch/archive/$CASE</DOUT_S_ROOT>
-    <BASELINE_ROOT>/Volumes/SSD-Data/aegis-data/e3sm-work/baselines/$COMPILER</BASELINE_ROOT>
+    <CIME_OUTPUT_ROOT>&work;/scratch</CIME_OUTPUT_ROOT>
+    <DIN_LOC_ROOT>&work;/inputdata</DIN_LOC_ROOT>
+    <DIN_LOC_ROOT_CLMFORC>&work;/inputdata/atm/datm7</DIN_LOC_ROOT_CLMFORC>
+    <DOUT_S_ROOT>&work;/scratch/archive/$CASE</DOUT_S_ROOT>
+    <BASELINE_ROOT>&work;/baselines/$COMPILER</BASELINE_ROOT>
     <GMAKE>make</GMAKE>
     <GMAKE_J>6</GMAKE_J>
     <TESTS>e3sm_land_developer</TESTS>
@@ -34,16 +47,15 @@
     <RUNDIR>$CIME_OUTPUT_ROOT/$CASE/run</RUNDIR>
     <EXEROOT>$CIME_OUTPUT_ROOT/$CASE/bld</EXEROOT>
     <environment_variables>
-      <env name="AEGIS_E3SM_ENV">/Volumes/SSD-Data/aegis-data/conda-envs/e3sm</env>
-      <env name="PATH">/Volumes/SSD-Data/aegis-data/conda-envs/e3sm/bin:/usr/bin:/bin:/usr/sbin:/sbin</env>
-      <env name="NETCDF_PATH">/Volumes/SSD-Data/aegis-data/conda-envs/e3sm</env>
-      <env name="NETCDF_C_PATH">/Volumes/SSD-Data/aegis-data/conda-envs/e3sm</env>
-      <env name="NETCDF_FORTRAN_PATH">/Volumes/SSD-Data/aegis-data/conda-envs/e3sm</env>
-      <env name="PNETCDF_PATH">/Volumes/SSD-Data/aegis-data/conda-envs/e3sm</env>
-      <env name="HDF5_ROOT">/Volumes/SSD-Data/aegis-data/conda-envs/e3sm</env>
-      <env name="MOAB_ROOT">/Volumes/SSD-Data/aegis-data/conda-envs/e3sm</env>
-      <env name="LAPACK_ROOT">/Volumes/SSD-Data/aegis-data/conda-envs/e3sm</env>
-      <env name="TMPDIR">/Volumes/SSD-Data/aegis-data/e3sm-work/tmp</env>
+      <env name="AEGIS_E3SM_ENV">&condaenv;</env>
+      <env name="PATH">&condaenv;/bin:/usr/bin:/bin:/usr/sbin:/sbin</env>
+      <env name="NETCDF_PATH">&condaenv;</env>
+      <env name="NETCDF_C_PATH">&condaenv;</env>
+      <env name="NETCDF_FORTRAN_PATH">&condaenv;</env>
+      <env name="PNETCDF_PATH">&condaenv;</env>
+      <env name="HDF5_ROOT">&condaenv;</env>
+      <env name="MOAB_ROOT">&condaenv;</env>
+      <env name="TMPDIR">&work;/tmp</env>
       <!-- conda-forge MPICH (ch4:ofi): the default libfabric provider hangs in
            MPI_Finalize on macOS; the tcp provider works. -->
       <env name="FI_PROVIDER">tcp</env>

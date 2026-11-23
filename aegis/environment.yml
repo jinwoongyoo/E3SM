@@ -1,25 +1,30 @@
+# conda-forge toolchain for E3SM/ELM on osx-arm64 (machine aegis-mac).
+# Pins are major.minor of the versions that passed the tests; the exact
+# record is conda-osx-arm64.lock.txt.
 name: e3sm
 channels:
   - conda-forge
+  - nodefaults
 dependencies:
   - python=3.11
   - c-compiler
   - cxx-compiler
   - fortran-compiler
-  - mpich
+  - clang=21.1
+  - clangxx=21.1
+  - gfortran=15.3
+  - mpich=5.0
   - mpi=*=mpich
-  - hdf5=*=mpi_mpich_*
-  - libnetcdf=*=mpi_mpich_*
-  - netcdf-fortran=*=mpi_mpich_*
-  - libpnetcdf=*=mpi_mpich_*
-  - cmake
+  - hdf5=2.2.*=mpi_mpich_*
+  - libnetcdf=4.10.*=mpi_mpich_*
+  - netcdf-fortran=4.6.*=mpi_mpich_*
+  - libpnetcdf=1.15.*=mpi_mpich_*
+  - moab=5.6.*=mpi_mpich_tempest_*
+  # BLAS/LAPACK for moab/tempest-remap only; E3SM itself links Apple Accelerate.
+  - libblas=*=*openblas
+  - cmake=4.5
   - make
   - perl
-  - libopenblas
-  - liblapack
-  - libblas=*=*openblas
-  - lapack
-  - moab=*=mpi_mpich_tempest_*
   - git
   - wget
   - curl
