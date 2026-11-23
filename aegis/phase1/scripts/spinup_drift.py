@@ -32,9 +32,15 @@ def main():
     ap.add_argument("--cycle-years", type=int, default=5)
     a = ap.parse_args()
     files = sorted(glob.glob(os.path.join(a.rundir, f"{a.case}.elm.h0.*.nc")))
-    ds = xr.open_mfdataset(files, combine="by_coords", decode_times=False,
-                           data_vars="minimal", coords="minimal", compat="override")
-    ds = ds[["TWS", "ZWT", "area", "landfrac", "landmask"]].load()
+    first = xr.open_dataset(files[0], decode_times=False)
+    stack = {v: [] for v in ("TWS", "ZWT")}
+    for f in files:
+        with xr.open_dataset(f, decode_times=False) as d:
+            for v in stack:
+                stack[v].append(d[v].values.reshape(-1, *d[v].shape[1:]))
+    ds = xr.Dataset({v: (("time", "lat", "lon"), np.concatenate(x)) for v, x in stack.items()})
+    for v in ("area", "landfrac", "landmask"):
+        ds[v] = (("lat", "lon"), first[v].values)
     nmon = ds.sizes["time"]
     nyear = nmon // 12
     w = (ds.area * ds.landfrac).where(ds.landmask > 0).fillna(0.0)

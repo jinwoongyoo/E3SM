@@ -26,9 +26,9 @@ work end to end.
 | Resolution | `ELMMOS_USRDAT`, `ELM_USRDAT_NAME=r05_texas` (lnd = atm = rof grid, idmap lnd↔rof) |
 | DATM mode | `CLMNLDAS2`: 3 streams (Solar, Precip, TPQWL) from `atm/datm7/atm_forcing.datm7.NLDAS2.0.125d.v1`, 0.125° hourly, noleap |
 | Calendar | `NO_LEAP` (the DATM NLDAS-2 files already have Feb 29 removed) |
-| Driver | see "Run log" (`DRIVER` in `scripts/common.sh`) |
+| Driver | `moab` (E3SM default; `DRIVER` in `scripts/common.sh`) |
 | PEs | 6 MPI tasks, 1 thread (machine cap; shared with a CI runner) |
-| Coupling | ATM/LND 48 per day (30 min), ROF 8 per day |
+| Coupling | ATM/LND 48 per day (30 min); ROF 8 per day in the spin-up, 24 per day (hourly) in production so MOSART can write hourly output |
 | Surface data | r05 `surfdata_0.5x0.5_simyr2000_c200624.nc` (the IERA5ELM / r05 default, simyr 2000) subset to the box |
 | River network | `MOSART_global_half_20180721a.nc` subset to the box |
 
@@ -77,13 +77,13 @@ S=/Volumes/SSD-Data/aegis-data/E3SM/aegis/phase1/scripts
 PY=/Volumes/SSD-Data/aegis-data/conda-envs/e3sm-tools/bin/python   # tools env (env/)
 
 # 0. inputs (static files via CIME inputdata; NLDAS-2 2010-2017, ~210 GB)
-bash $S/fetch_nldas2.sh 2010 2017 10          # resumable, size-verified, 2 mirrors
+bash $S/fetch_nldas2.sh 2010 2017 12          # resumable, size-verified (OSDF, svn fallback)
 $PY  $S/fetch_usgs.py $P1/obs                 # USGS daily discharge + site info
 (cd $P1 && $PY $S/make_inputs.py inputs --tag c261123)
 
 # 1. spin-up (cold start, NLDAS-2 2010-2014 looped, 20 yr)
 bash $S/case_spinup.sh            # create + build
-bash $S/case_spinup.sh submit     # 4 x 5 yr (RESUBMIT=3)
+FI_PROVIDER=tcp bash $S/case_spinup.sh submit     # 4 x 5 yr (RESUBMIT=3)
 $PY  $S/spinup_drift.py $WORK/scratch/p1tx.nldas2.spinup/run p1tx.nldas2.spinup $P1/post/spinup_drift.json
 
 # 2. production 2010-01-01 -> 2017-09-30 (hybrid from the spin-up restart)
@@ -93,7 +93,15 @@ bash $S/case_production.sh segB   # branch, hourly output -> 2017-09-15
 bash $S/case_production.sh segC   # branch -> 2017-10-01
 
 # 3. post-processing (remap to ne30pg2, USGS scoring, figures)
+R=$WORK/scratch/p1tx.nldas2.prod/run; C=p1tx.nldas2.prod
+$PY $S/remap_ne30pg2.py $R $C h1 $P1/post/elm_daily_ne30pg2_texas.nc
+$PY $S/remap_ne30pg2.py $R $C h2 $P1/post/elm_hourly_ne30pg2_texas.nc
+$PY $S/score_usgs.py $R $C $P1/inputs/MOSART_r05_texas.c261123.nc $P1/obs/usgs_daily_q.csv $P1/post
+$PY $S/make_figures.py $R $C $P1/post $P1/figures
 ```
+
+Run the Python scripts from `scripts/` (or set `PYTHONPATH=$S`); they share
+`p1lib.py`.
 
 ### Tools environment
 
@@ -128,12 +136,33 @@ same cell. Their scores mainly show this resolution limit.
 
 ## Known quirks / deviations
 
+* The driver's default is `end_restart=.false.`, so `case_production.sh`
+  sets `end_restart = .true.` in `user_nl_cpl`. Without it, segment A writes
+  no restart at its end date (2017-08-15) and the branches cannot start.
+* `ROF_NCPL=24` in production. With the spin-up's 3-hour MOSART step,
+  `rtmhist_nhtfrq=-1` (hourly) is not a multiple of the step and MOSART falls
+  back to monthly output.
+* The branch segments keep the case name (`RUN_REFCASE == CASE`). The driver
+  then sets `brnch_retain_casename=.true.` automatically, so history file
+  names continue unbroken.
+* `create_clone` does not run `case.setup`, so `case_production.sh` runs it.
+* NaNs that are expected, not errors:
+  * One r05 cell (29.25N, 94.25W; Galveston Bay shore) is ~99% wetland with
+    land fraction 0.04. ELM has no soil column there, so `SOILWATER_10CM` and
+    `ZWT` are NaN.
+  * MOSART writes NaN discharge at ocean/isolated cells (`mask` 2) and at
+    outlets (`mask` 3). Every gauge cell is a land cell (`mask` 1).
+
 * `map_r05_to_ne30pg2_traave.20231130.nc` is listed in `config_grids.xml`
   under `cpl/gridmaps/r05/`, but the file on the inputdata server is under
   `cpl/gridmaps/ne30pg2/`. It was fetched from the latter.
 * The NLDAS-2 DATM files are not on the E3SM (LCRC) inputdata server.
-  `fetch_nldas2.sh` gets them from the CESM svn inputdata server or its OSDF
-  mirror (byte-identical) into the same relative path under `DIN_LOC_ROOT`.
+  `fetch_nldas2.sh` gets them from the CESM inputdata OSDF mirror
+  (`osdf-director.osg-htc.org/ncar/gdex/d651077/cesmdata/inputdata`;
+  it supports HTTP Range, so partial files resume),
+  falling back to the svn server (byte-identical, slow, ignores Range).
+  Files go to the same relative path under `DIN_LOC_ROOT`, so CIME's
+  `check_input_data` finds them.
 * ELM ignores history-namelist changes on `CONTINUE_RUN` (history tapes come
   from the restart). So the hourly window (2017-08-15 → 09-15) and the
   following segment are **branch** runs. As a result, the h0 (monthly) files
