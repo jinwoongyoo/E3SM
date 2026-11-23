@@ -1,0 +1,29 @@
+name: e3sm
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - c-compiler
+  - cxx-compiler
+  - fortran-compiler
+  - mpich
+  - mpi=*=mpich
+  - hdf5=*=mpi_mpich_*
+  - libnetcdf=*=mpi_mpich_*
+  - netcdf-fortran=*=mpi_mpich_*
+  - libpnetcdf=*=mpi_mpich_*
+  - cmake
+  - make
+  - perl
+  - libopenblas
+  - liblapack
+  - libblas=*=*openblas
+  - lapack
+  - moab=*=mpi_mpich_tempest_*
+  - git
+  - wget
+  - curl
+  - subversion
+  - lxml
+  - pyyaml
+  - jinja2
