@@ -23,6 +23,8 @@ dependencies:
   # BLAS/LAPACK for moab/tempest-remap only; E3SM itself links Apple Accelerate.
   - libblas=*=*openblas
   - cmake=4.5
+  # CIME validates config_machines.xml (which uses DTD entities) with xmllint.
+  - libxml2=2.15
   - make
   - perl
   - git

@@ -29,8 +29,10 @@ set(NetCDF_Fortran_PATH "$ENV{AEGIS_E3SM_ENV}" CACHE FILEPATH "" FORCE)
 # BLAS/LAPACK: E3SM's find_dep_packages.cmake calls find_package(BLAS/LAPACK);
 # use Apple Accelerate from the macOS SDK explicitly. (The conda-forge
 # OpenBLAS-backed libblas/liblapack in the env are only runtime deps of
-# moab/tempest-remap.)
-set(BLA_VENDOR "Apple")
+# moab/tempest-remap.) Macros.cmake is included inside a CMake function
+# (components/CMakeLists.txt: set_compilers_e3sm), so a plain set() would be
+# discarded before find_package runs; it must be a cache variable.
+set(BLA_VENDOR "Apple" CACHE STRING "BLAS/LAPACK vendor (aegis-mac)" FORCE)
 
 # Find the conda-env shared libraries at run time.
 string(APPEND CMAKE_EXE_LINKER_FLAGS " -Wl,-rpath,$ENV{AEGIS_E3SM_ENV}/lib")
@@ -41,10 +43,20 @@ string(APPEND CMAKE_EXE_LINKER_FLAGS " -Wl,-rpath,$ENV{AEGIS_E3SM_ENV}/lib")
 # divide-by-zero, which -ffpe-trap (debug builds) turns into SIGILL on Apple
 # silicon (seen in DATM, datm_comp_mod.F90). Listing gfortran's libgcc.a first
 # makes these helpers come from libgcc, as in a gfortran-driven link.
-execute_process(COMMAND gfortran -print-libgcc-file-name
+execute_process(COMMAND "$ENV{AEGIS_E3SM_ENV}/bin/gfortran" -print-libgcc-file-name
+                RESULT_VARIABLE _aegis_rc
                 OUTPUT_VARIABLE _aegis_libgcc OUTPUT_STRIP_TRAILING_WHITESPACE)
-if (NOT EXISTS "${_aegis_libgcc}")
-  message(FATAL_ERROR "aegis-mac: cannot locate gfortran libgcc.a (got '${_aegis_libgcc}')")
+if (NOT _aegis_rc EQUAL 0 OR NOT IS_ABSOLUTE "${_aegis_libgcc}" OR NOT EXISTS "${_aegis_libgcc}")
+  message(FATAL_ERROR "aegis-mac: cannot locate libgcc.a via "
+          "'$ENV{AEGIS_E3SM_ENV}/bin/gfortran -print-libgcc-file-name' "
+          "(rc=${_aegis_rc}, got '${_aegis_libgcc}')")
+endif()
+file(REAL_PATH "${_aegis_libgcc}" _aegis_libgcc)
+# CMAKE_EXE_LINKER_FLAGS is a flat string that CIME also hands to autoconf
+# builds (MCT's LDFLAGS), where embedded quotes stay literal and break the
+# link, so the path is added unquoted and must not contain whitespace.
+if (_aegis_libgcc MATCHES "[ \t\n]")
+  message(FATAL_ERROR "aegis-mac: libgcc.a path contains whitespace: '${_aegis_libgcc}'")
 endif()
 string(APPEND CMAKE_EXE_LINKER_FLAGS " ${_aegis_libgcc}")
 

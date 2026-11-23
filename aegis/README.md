@@ -26,13 +26,13 @@ E3SM `master` @ `c5c6b14b23`, MOAB coupler (default), 1 MPI task,
 
 | Test | Result | Shared-lib build | Model build | Run |
 |------|--------|------------------|-------------|-----|
-| `SMS_Ld1.1x1_brazil.IELM.aegis-mac_gnu` | **PASS** (all phases incl. MEMLEAK) | 113 s | 88 s | 2 s |
-| `SMS_D_Ld1.1x1_brazil.IELM.aegis-mac_gnu` (debug: `-O0`, bounds checks, FP traps) | **PASS** | 97 s | 71 s | 5 s |
-| `ERS_Ld3.1x1_brazil.IELM.aegis-mac_gnu` | **PASS** (incl. `COMPARE_base_rest`; cprnc: 159 fields, 0 diffs) | 113 s | 87 s | 4 s |
+| `SMS_Ld1.1x1_brazil.IELM.aegis-mac_gnu` | **PASS** (all phases incl. MEMLEAK) | 112 s | 107 s | 6 s |
+| `SMS_D_Ld1.1x1_brazil.IELM.aegis-mac_gnu` (debug: `-O0`, bounds checks, FP traps) | **PASS** | 101 s | 67 s | 6 s |
+| `ERS_Ld3.1x1_brazil.IELM.aegis-mac_gnu` | **PASS** (incl. `COMPARE_base_rest`; cprnc: 159 fields, 0 diffs) | 112 s | 90 s | 4 s |
 | `SMS_Ld1_Vmct.1x1_brazil.IELM.aegis-mac_gnu` (legacy MCT driver) | **PASS** | 96 s | 96 s | 4 s |
 
 * The first three tests ran together in one `create_test` call (test id
-  `p0h`, input data already present): **359 s wall** in total. The `_Vmct`
+  `p0i`, input data already present): **376 s wall** in total. The `_Vmct`
   test (id `p0d`) ran with an earlier revision of the macros.
 * `e3sm.exe` links BLAS/LAPACK from Apple Accelerate (`otool -L`:
   `/System/Library/Frameworks/Accelerate.framework`); see note 7.
@@ -41,8 +41,8 @@ E3SM `master` @ `c5c6b14b23`, MOAB coupler (default), 1 MPI task,
   and ~2.4 GiB the MODIS LAI stream (`lnd/clm2/lai_streams`). With
   `prefetch_inputdata.sh` (8 parallel connections, ~7-8 MB/s aggregate) this
   took ~1.5 h; it is a one-time cost.
-* Test directories: `/Volumes/SSD-Data/aegis-data/e3sm-work/scratch/tests/<test>.p0h`
-  (run dirs: `/Volumes/SSD-Data/aegis-data/e3sm-work/scratch/<test>.p0h/run`).
+* Test directories: `/Volumes/SSD-Data/aegis-data/e3sm-work/scratch/tests/<test>.p0i`
+  (run dirs: `/Volumes/SSD-Data/aegis-data/e3sm-work/scratch/<test>.p0i/run`).
 
 ## Reproduce
 
@@ -99,8 +99,22 @@ Toolchain in the lock: gfortran 15.3 (Fortran), clang 21.1 (C/C++),
 MPICH 5.0.2, HDF5 2.2.0 (MPI), NetCDF-C 4.10.1, NetCDF-Fortran 4.6.4,
 PnetCDF 1.15.1, MOAB 5.6.0 (MPI + TempestRemap), cmake 4.5.1, python 3.11.
 
-The environment does not need to be activated: the CIME machine file puts its
-`bin/` first on `PATH`.
+The environment does not need to be activated, but its `bin/` must be first
+on `PATH` in any shell that runs a CIME command (`create_test`, `./xmlquery`,
+`./xmlchange`, `./case.setup`, `./case.build`, `./case.submit`, ...) or
+`prefetch_inputdata.sh`. The CIME tools start with `#!/usr/bin/env python3`
+and need the env's python, and CIME checks `config_machines.xml` with
+`xmllint` before reading the machine file. The machine file uses XML DTD
+entities, which need the env's libxml2 2.15 `xmllint` (pinned). Use this one
+line in every such shell:
+
+```bash
+export PATH=/Volumes/SSD-Data/aegis-data/conda-envs/e3sm/bin:/usr/bin:/bin:/usr/sbin:/sbin
+```
+
+(The machine file sets `PATH` again for the build and run steps it starts.
+`prefetch_inputdata.sh` adds the env to `PATH` itself and stops if `python3`
+or `xmllint` would come from outside the env.)
 
 ### 3. CIME user machine `aegis-mac`
 
@@ -138,9 +152,7 @@ when changing them (`diff -r ~/.cime aegis/dotcime` must print nothing).
 
 ### 4. Run the tests
 
-The `PATH` export below is only needed to run `create_test` itself (it
-needs the env's python/perl); builds and runs get their `PATH` from the
-machine file.
+Use the `PATH` export from step 2 (repeated here).
 
 ```bash
 cd /Volumes/SSD-Data/aegis-data/E3SM
@@ -150,7 +162,7 @@ nice -n 10 ./cime/scripts/create_test \
     SMS_Ld1.1x1_brazil.IELM.aegis-mac_gnu \
     SMS_D_Ld1.1x1_brazil.IELM.aegis-mac_gnu \
     ERS_Ld3.1x1_brazil.IELM.aegis-mac_gnu \
-    --output-root $W/scratch --test-root $W/scratch/tests --test-id p0h --wait
+    --output-root $W/scratch --test-root $W/scratch/tests --test-id p0i --wait
 ```
 
 CIME downloads missing input data automatically (E3SM server first, then the
@@ -161,16 +173,19 @@ as above):
 ```bash
 cd /Volumes/SSD-Data/aegis-data/E3SM
 nice -n 10 ./cime/scripts/create_test SMS_Ld1.1x1_brazil.IELM.aegis-mac_gnu \
-    --output-root $W/scratch --test-root $W/scratch/tests --test-id p0h --no-run --wait
-aegis/prefetch_inputdata.sh $W/scratch/tests/SMS_Ld1.1x1_brazil.IELM.aegis-mac_gnu.p0h 8
-(cd $W/scratch/tests/SMS_Ld1.1x1_brazil.IELM.aegis-mac_gnu.p0h && ./case.submit)
+    --output-root $W/scratch --test-root $W/scratch/tests --test-id p0i --no-run --wait
+aegis/prefetch_inputdata.sh $W/scratch/tests/SMS_Ld1.1x1_brazil.IELM.aegis-mac_gnu.p0i 8
+(cd $W/scratch/tests/SMS_Ld1.1x1_brazil.IELM.aegis-mac_gnu.p0i && ./case.submit)
 ```
 
 `prefetch_inputdata.sh CASEROOT [NJOBS]` exits 0 only if every listed file
 under `DIN_LOC_ROOT` is present afterwards; otherwise it prints the
 `MISSING` files and a summary and exits 1. Downloads are accepted only if
 non-empty, not an HTML error page, and (for `.nc`) start with a NetCDF or
-HDF5 signature.
+HDF5 signature. It exits 1 if any stage of its pipeline fails (for example
+an unreadable input-data list) and 2 on usage errors. It puts
+`$AEGIS_E3SM_ENV/bin` first on `PATH` itself (default: the env path above)
+and exits 2 if `python3` or `xmllint` would come from elsewhere.
 
 ## Notes and gotchas (all handled without changing E3SM source)
 
@@ -210,7 +225,9 @@ HDF5 signature.
    server (`web.lcrc.anl.gov`) does not host this dataset; it comes from
    the CESM svn inputdata server.
 7. **BLAS/LAPACK.** E3SM's `components/cmake/find_dep_packages.cmake` uses
-   CMake `find_package(BLAS/LAPACK)`; the macros set `BLA_VENDOR=Apple`, so
+   CMake `find_package(BLAS/LAPACK)`; the macros set the cache variable
+   `BLA_VENDOR=Apple` (a plain `set()` would be lost: `Macros.cmake` is
+   included inside a CMake function), so
    `e3sm.exe` links Apple **Accelerate** from the macOS SDK (`otool -L`
    shows `/System/Library/Frameworks/Accelerate.framework`). The conda-forge
    OpenBLAS-backed `libblas`/`liblapack` in the env are there only because
@@ -225,6 +242,11 @@ HDF5 signature.
    `SMS_D` this made `0.0**3` in DATM (`datm_comp_mod.F90`, shortwave
    split at night) raise divide-by-zero, which `-ffpe-trap` turns into
    **SIGILL** on Apple silicon (FP traps are delivered as SIGILL there).
-   The macros put gfortran's `libgcc.a` first on the link line so these
-   helpers come from libgcc, as in a gfortran-driven link. Release builds
+   The macros put gfortran's `libgcc.a` (located with the env's
+   `gfortran -print-libgcc-file-name`) first on the link line so these
+   helpers come from libgcc, as in a gfortran-driven link. The path is added
+   unquoted: CIME also passes `CMAKE_EXE_LINKER_FLAGS` to MCT's autoconf
+   `configure` as `LDFLAGS`, where quotes stay literal and break the link
+   ("C compiler cannot create executables"). So the macros stop with an
+   error if the path contains whitespace. Release builds
    inline `x**3` and were not affected.
