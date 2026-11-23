@@ -1,0 +1,19 @@
+# Post-processing / input-building tools for Aegis Phase 1 (separate from the
+# E3SM build env). conda-forge only.
+name: e3sm-tools
+channels:
+  - conda-forge
+  - nodefaults
+dependencies:
+  - python=3.12
+  - numpy
+  - scipy
+  - pandas
+  - xarray
+  - netcdf4
+  - h5netcdf
+  - nco
+  - matplotlib
+  - cartopy
+  - requests
+  - pyyaml

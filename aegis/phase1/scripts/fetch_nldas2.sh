@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# Resumable, size-verified download of the CTSM/E3SM DATM NLDAS-2 forcing
+# (DATM_MODE=CLMNLDAS2: atm_forcing.datm7.NLDAS2.0.125d.v1/{Solar,Precip,TPQWL})
+# from the CESM inputdata mirrors into DIN_LOC_ROOT (the same paths CIME's
+# check_input_data would use). ~2.2 GB per month (CONUS, hourly, 0.125 deg).
+#
+# usage: fetch_nldas2.sh YEAR_START YEAR_END [NJOBS]   (NJOBS default 4)
+# A file is accepted only when its size equals the server Content-Length and it
+# starts with a NetCDF/HDF5 signature. Partial files (*.part) are resumed with
+# curl -C -. Re-running is safe and only fetches what is missing.
+set -euo pipefail
+[ $# -ge 2 ] || { echo "usage: $0 YEAR_START YEAR_END [NJOBS]" >&2; exit 2; }
+Y0=$1; Y1=$2; NJOBS=${3:-4}
+DIN=${DIN_LOC_ROOT:-/Volumes/SSD-Data/aegis-data/e3sm-work/inputdata}
+export DIN
+REL=atm/datm7/atm_forcing.datm7.NLDAS2.0.125d.v1
+
+fetch1() {
+  set -euo pipefail
+  local rel=$1 f="$DIN/$1" part="$DIN/$1.part" len s m attempt
+  local mirrors=(https://svn-ccsm-inputdata.cgd.ucar.edu/trunk/inputdata
+                 https://osdf-director.osg-htc.org/ncar/gdex/d651077/cesmdata/inputdata)
+  # alternate the mirror order per worker to spread load (files are byte-identical)
+  if (( $$ % 2 )); then mirrors=("${mirrors[1]}" "${mirrors[0]}"); fi
+  mkdir -p "$(dirname "$f")"
+  for attempt in 1 2 3 4 5; do
+    for s in "${mirrors[@]}"; do
+      len=$(curl -sIL --connect-timeout 20 --max-time 60 "$s/$rel" |
+            tr -d '\r' | awk 'tolower($1)=="content-length:"{v=$2} END{print v}')
+      [ -n "$len" ] || continue
+      if [ -f "$f" ] && [ "$(stat -f %z "$f")" = "$len" ]; then echo "HAVE    $rel"; return 0; fi
+      if [ -f "$part" ] && [ "$(stat -f %z "$part")" -gt "$len" ]; then rm -f "$part"; fi
+      curl -sfL --connect-timeout 20 --speed-limit 20000 --speed-time 60 -C - \
+           -o "$part" "$s/$rel" || true
+      if [ -f "$part" ] && [ "$(stat -f %z "$part")" = "$len" ]; then
+        m=$(LC_ALL=C head -c 4 "$part" | od -An -tx1 | tr -d ' \n')
+        case $m in 43444601|43444602|43444605|89484446) ;;
+          *) echo "BADMAGIC $rel" >&2; rm -f "$part"; continue ;; esac
+        mv -f "$part" "$f"; echo "OK      $rel $len"; return 0
+      fi
+    done
+    sleep $((attempt * 10))
+  done
+  echo "MISSING $rel"; return 1
+}
+export -f fetch1
+
+for y in $(seq "$Y0" "$Y1"); do for m in 01 02 03 04 05 06 07 08 09 10 11 12; do
+  echo "$REL/TPQWL/ctsmforc.NLDAS2.0.125d.v1.TPQWL.$y-$m.nc"
+  echo "$REL/Precip/ctsmforc.NLDAS2.0.125d.v1.Prec.$y-$m.nc"
+  echo "$REL/Solar/ctsmforc.NLDAS2.0.125d.v1.Solr.$y-$m.nc"
+done; done | xargs -n 1 -P "$NJOBS" bash -c 'fetch1 "$1"' _ |
+  awk '/^HAVE/{h++} /^OK/{o++} /^MISSING/{x++} {print; fflush()}
+       END{printf "fetch_nldas2: %d present, %d downloaded, %d missing\n",h,o,x; exit (x>0)}'
