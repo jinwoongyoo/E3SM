@@ -18,10 +18,11 @@ REL=atm/datm7/atm_forcing.datm7.NLDAS2.0.125d.v1
 fetch1() {
   set -euo pipefail
   local rel=$1 f="$DIN/$1" part="$DIN/$1.part" len s m attempt
-  local mirrors=(https://svn-ccsm-inputdata.cgd.ucar.edu/trunk/inputdata
-                 https://osdf-director.osg-htc.org/ncar/gdex/d651077/cesmdata/inputdata)
-  # alternate the mirror order per worker to spread load (files are byte-identical)
-  if (( $$ % 2 )); then mirrors=("${mirrors[1]}" "${mirrors[0]}"); fi
+  # OSDF first: ~4 MB/s per connection and supports byte ranges (resume).
+  # The svn server is ~0.5 MB/s per connection and ignores Range (no resume),
+  # so it is only a fallback. The files on both are byte-identical.
+  local mirrors=(https://osdf-director.osg-htc.org/ncar/gdex/d651077/cesmdata/inputdata
+                 https://svn-ccsm-inputdata.cgd.ucar.edu/trunk/inputdata)
   mkdir -p "$(dirname "$f")"
   for attempt in 1 2 3 4 5; do
     for s in "${mirrors[@]}"; do

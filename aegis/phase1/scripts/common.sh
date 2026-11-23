@@ -26,8 +26,8 @@ COMPILER=gnu
 NTASKS=6                             # machine cap (shared with a CI runner)
 DRIVER=${DRIVER:-moab}
 
-CASE_SPINUP=$P1/cases/p1tx.nldas2.spinup
-CASE_PROD=$P1/cases/p1tx.nldas2.prod
+CASE_SPINUP=${CASE_SPINUP:-$P1/cases/p1tx.nldas2.spinup}
+CASE_PROD=${CASE_PROD:-$P1/cases/p1tx.nldas2.prod}
 
 # ---------------------------------------------------------------------------
 # Forcing hook. Everything forcing-specific lives here; swapping NLDAS-2 for

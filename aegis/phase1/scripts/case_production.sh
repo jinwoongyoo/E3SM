@@ -14,6 +14,12 @@
 set -euo pipefail
 . "$(dirname "$0")/common.sh"
 C=$CASE_PROD
+# dates (overridable for a short test chain)
+PROD_START=${PROD_START:-2010-01-01}
+PROD_YR_END=${PROD_YR_END:-2017}
+SEG_A_STOP=${SEG_A_STOP:-2017-08-15}     # = start of the hourly window
+SEG_B_STOP=${SEG_B_STOP:-2017-09-15}     # = end of the hourly window
+SEG_C_STOP=${SEG_C_STOP:-2017-10-01}
 CASE_NAME=$(basename "$C")
 SPIN_NAME=$(basename "$CASE_SPINUP")
 
@@ -53,14 +59,21 @@ case ${1:-} in
   create)
     REFDATE=${2:?REFDATE}
     [ -e "$C" ] && { echo "case exists: $C" >&2; exit 1; }
-    "$E3SM_ROOT"/cime/scripts/create_clone --case "$C" --clone "$CASE_SPINUP" --keepexe
+    "$E3SM_ROOT"/cime/scripts/create_clone --case "$C" --clone "$CASE_SPINUP" --keepexe \
+        --cime-output-root "$WORK/scratch"
     cd "$C"
     ./case.setup
     apply_forcing "$C"
-    ./xmlchange DATM_CLMNCEP_YR_START=2010,DATM_CLMNCEP_YR_END=2017,DATM_CLMNCEP_YR_ALIGN=2010
+    ./xmlchange DATM_CLMNCEP_YR_START=${PROD_START%%-*},DATM_CLMNCEP_YR_END=$PROD_YR_END,DATM_CLMNCEP_YR_ALIGN=${PROD_START%%-*}
     ./xmlchange RUN_TYPE=hybrid,RUN_REFCASE="$SPIN_NAME",RUN_REFDATE="$REFDATE",RUN_REFTOD=00000
-    ./xmlchange RUN_STARTDATE=2010-01-01,GET_REFCASE=FALSE,CLM_FORCE_COLDSTART=off,RESUBMIT=0
+    ./xmlchange RUN_STARTDATE=$PROD_START,GET_REFCASE=FALSE,ELM_FORCE_COLDSTART=off,RESUBMIT=0
     ./xmlchange DOUT_S=FALSE
+    # hourly river coupling (spin-up used the default 3 h): MOSART history
+    # frequency is in rof steps, so hourly rtmhist output needs a 1 h rof step
+    ./xmlchange ROF_NCPL=24
+    # the driver default is end_restart=.false.; each segment must end with a
+    # restart set at its STOP_DATE for the next (branch) segment
+    echo "end_restart = .true." >> user_nl_cpl
     RUNDIR=$(./xmlquery --value RUNDIR); SRUN=$(cd "$CASE_SPINUP" && ./xmlquery --value RUNDIR)
     mkdir -p "$RUNDIR"
     cp -p "$SRUN"/"$SPIN_NAME".*.r*."$REFDATE"-00000.nc "$RUNDIR"/
@@ -69,14 +82,15 @@ case ${1:-} in
   segA)
     cd "$C"
     write_nl 0
-    ./xmlchange CONTINUE_RUN=FALSE,STOP_OPTION=date,STOP_DATE=20170815
+    ./xmlchange CONTINUE_RUN=FALSE,STOP_OPTION=date,STOP_DATE=${SEG_A_STOP//-/}
     ./xmlchange REST_OPTION=nyears,REST_N=1
     nice -n 10 ./case.submit
     ;;
   segB|segC)
     cd "$C"
-    if [ "$1" = segB ]; then REF=2017-08-15; STOP=20170915; write_nl 1
-    else REF=2017-09-15; STOP=20171001; write_nl 0; fi
+    if [ "$1" = segB ]; then REF=$SEG_A_STOP; STOP=${SEG_B_STOP//-/}; write_nl 1
+    else REF=$SEG_B_STOP; STOP=${SEG_C_STOP//-/}; write_nl 0; fi
+    # RUN_REFCASE == CASE -> the driver sets brnch_retain_casename=.true. (ELM needs it)
     ./xmlchange RUN_TYPE=branch,RUN_REFCASE="$CASE_NAME",RUN_REFDATE=$REF,RUN_REFTOD=00000,GET_REFCASE=FALSE
     ./xmlchange CONTINUE_RUN=FALSE,STOP_OPTION=date,STOP_DATE=$STOP,REST_OPTION=nyears,REST_N=1
     nice -n 10 ./case.submit

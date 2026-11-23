@@ -1,4 +1,6 @@
 """Shared helpers for the Aegis Phase 1 scripts (gauges, MOSART cell matching)."""
+import datetime
+
 import numpy as np
 
 # USGS NWIS site metadata (dec_lat_va, dec_long_va, drain_area_va / contrib_drain_area_va
@@ -61,3 +63,44 @@ def terminal_outlets(dn0):
         t = out[path[-1]] if out[path[-1]] >= 0 else path[-1]
         out[path] = t
     return out
+
+
+# ---------------------------------------------------------------------------
+# History-file helpers
+# ---------------------------------------------------------------------------
+def open_hist(files, variables=None):
+    """Concatenate ELM/MOSART history files of one tape (several segments).
+
+    Each record is labelled with the midpoint of its nominal interval, measured
+    back from the upper time bound (time = ub - nominal/2; nominal = median
+    record width). That gives 12:00 for daily and hh:30 for hourly records.
+    Records shorter than 0.9 x nominal (ELM's 1-step record at a hybrid/branch
+    start) are dropped. Duplicate labels keep the last segment's record.
+    Returns a Dataset on the noleap calendar (cftime) with time_bounds."""
+    import xarray as xr
+    import pandas as pd  # noqa: F401  (xarray needs it)
+    coder = xr.coders.CFDatetimeCoder(use_cftime=True)
+    parts = []
+    for f in sorted(files):
+        d = xr.open_dataset(f, decode_times=coder)
+        keep = [v for v in (variables or d.data_vars) if v in d.data_vars]
+        static = [v for v in ("area", "landfrac", "landmask", "areatotal2", "mask") if v in d and "time" not in d[v].dims]
+        parts.append(d[sorted(set(keep + static + ["time_bounds"]))])
+    ds = xr.concat(parts, dim="time", data_vars="minimal", coords="minimal", compat="override", join="override")
+    tb = ds.time_bounds.values
+    width = np.array([(b[1] - b[0]).total_seconds() for b in tb])
+    nominal = float(np.median(width))
+    ok = width >= 0.9 * nominal
+    ds = ds.isel(time=np.where(ok)[0])
+    half = datetime.timedelta(seconds=nominal / 2)
+    label = [b[1] - half for b in ds.time_bounds.values]
+    ds = ds.assign_coords(time=("time", label))
+    _, idx = np.unique(ds.time.values[::-1], return_index=True)
+    keep = np.sort(ds.sizes["time"] - 1 - idx)
+    ds = ds.isel(time=keep)
+    ds.attrs["record_seconds"] = nominal
+    return ds
+
+
+def day_strings(times):
+    return [f"{t.year:04d}-{t.month:02d}-{t.day:02d}" for t in times]
