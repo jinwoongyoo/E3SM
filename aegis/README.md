@@ -20,7 +20,7 @@ E3SM-Project/E3SM `master` @ `c5c6b14b23`.
 
 ## Results
 
-All on the Aegis MacBook (Apple silicon, 14 cores, 96 GB RAM, macOS),
+All on the Aegis MacBook (macOS 26.7.1, Apple M3 Max, 14 cores, 96 GiB RAM),
 E3SM `master` @ `c5c6b14b23`, MOAB coupler (default), 1 MPI task,
 `GMAKE_J=6`, `nice -n 10`. No E3SM source changes.
 
@@ -32,9 +32,9 @@ E3SM `master` @ `c5c6b14b23`, MOAB coupler (default), 1 MPI task,
 
 * Clean end-to-end run of the SMS + ERS pair in one `create_test` call
   (test id `p0f`, input data already present): **299 s wall** total.
-* Input data downloaded into `DIN_LOC_ROOT`: **~40 GB**, of which ~37 GB
+* Input data downloaded into `DIN_LOC_ROOT`: **~40 GiB**, of which ~37.4 GiB
   is `atm/datm7` (CLM_QIAN T62 forcing, 1188 monthly files; see note 6),
-  and ~2.4 GB the MODIS LAI stream (`lnd/clm2/lai_streams`). With `prefetch_inputdata.sh` (8 parallel
+  and ~2.4 GiB the MODIS LAI stream (`lnd/clm2/lai_streams`). With `prefetch_inputdata.sh` (8 parallel
   connections, ~7-8 MB/s aggregate) this took ~1.5 h; it is a one-time cost.
 * Test directories: `/Volumes/SSD-Data/aegis-data/e3sm-work/scratch/tests/<test>.p0f`
   (run dirs: `/Volumes/SSD-Data/aegis-data/e3sm-work/scratch/<test>.p0f/run`;
@@ -42,9 +42,22 @@ E3SM `master` @ `c5c6b14b23`, MOAB coupler (default), 1 MPI task,
 
 ## Reproduce
 
+### Prerequisites
+
+* macOS on Apple silicon (arm64). Tested: macOS 26.7.1, Apple M3 Max,
+  14 cores, 96 GiB RAM.
+* Xcode Command Line Tools (`xcode-select --install`). They are used **only**
+  for the macOS SDK (system headers/libraries and frameworks that the conda
+  compilers link against, e.g. `.../CommandLineTools/SDKs/MacOSX.sdk`); no
+  Xcode compilers or Python are used.
+* Miniforge at `~/miniforge3` (conda/mamba from conda-forge).
+* ~45 GiB free disk for input data plus a few GiB for builds.
+
 All paths below are the ones used on the Aegis MacBook. Everything lives in
-user space (no sudo, no Homebrew/Xcode python); the only toolchain is
-Miniforge/conda-forge.
+user space (no sudo, no Homebrew, no Xcode/system Python). conda-forge
+supplies the compilers, MPI, and all libraries (HDF5, NetCDF, PnetCDF,
+MOAB, BLAS/LAPACK) plus cmake/make/perl/python; the system supplies only
+the macOS SDK.
 
 ### 1. Conda environment
 
@@ -99,7 +112,17 @@ mkdir -p /Volumes/SSD-Data/aegis-data/e3sm-work/{scratch,inputdata,baselines,tmp
 | `NETCDF_PATH`, `PNETCDF_PATH`, `HDF5_ROOT`, `MOAB_ROOT` | the conda env prefix |
 | `FI_PROVIDER` | `tcp` (see notes) |
 
+Machine/user-specific values to adjust before reusing on another Mac:
+`MAX_TASKS_PER_NODE` / `MAX_MPITASKS_PER_NODE` (6 here, to leave cores for
+a self-hosted CI runner), `SUPPORTED_BY` (contact address), `GMAKE_J`, and
+the `/Volumes/SSD-Data/...` paths. Keep `~/.cime/` and `aegis/dotcime/`
+byte-identical when changing them.
+
 ### 4. Run the tests
+
+The `PATH` export below is only needed to run `create_test` itself (it
+needs the env's python/perl); builds and runs get their `PATH` from the
+machine file.
 
 ```bash
 cd /Volumes/SSD-Data/aegis-data/E3SM
@@ -149,6 +172,6 @@ cd $W/scratch/tests/SMS_Ld1.1x1_brazil.IELM.aegis-mac_gnu.p0f && ./case.submit
    a directory whose name differs from `E3SM` only by case next to the clone.
 6. **Input data.** `1x1_brazil` + `IELM` uses the DATM `CLM_QIAN` forcing
    (global T62, 1972–2004). CIME checks every stream file even for a 1-day
-   run, so the first run downloads ~1188 monthly files (~34 GB). The E3SM
+   run, so the first run downloads ~1188 monthly files (~37.4 GiB). The E3SM
    server (`web.lcrc.anl.gov`) does not host this dataset; it comes from
    the CESM svn inputdata server.

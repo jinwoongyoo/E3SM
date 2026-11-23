@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Parallel prefetch of the input files a CIME case needs (Buildconf/*.input_data_list).
 # CIME's own check_input_data downloads serially; for the DATM CLM_QIAN stream
-# (1188 monthly T62 files, ~34 GB) that is slow. Each file is tried on the E3SM
+# (1188 monthly T62 files, ~37.4 GiB) that is slow. Each file is tried on the E3SM
 # server first, then on the CESM inputdata mirrors (svn server and NCAR GDEX/OSDF,
 # which serve byte-identical files). Stalled transfers are aborted and retried.
 # Usage: prefetch_inputdata.sh CASEROOT [NJOBS]
