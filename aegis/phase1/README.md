@@ -50,7 +50,13 @@ under the E3SM v3 land mask `domain.lnd.r05_IcoswISC30E3r5.231121.nc`.
 Basin check: each gauge is matched to a MOSART cell (see "Gauge matching").
 The diagnostic traces the gauge's whole basin upstream from its terminal outlet:
 
-| Basin (gauge) | Whole basin inside box | Model/USGS area |
+Model/USGS area is MOSART `areaTotal2` of the matched cell divided by the USGS
+**total** drainage area (`drain_area_va`). Against the USGS contributing area
+(`contrib_drain_area_va`, which excludes non-contributing playa/closed basins)
+the ratio would be 1.28 for Brazos and 1.53 for Colorado; the other three
+gauges have contributing = total area.
+
+| Basin (gauge) | Whole basin inside box | Model/USGS area (total) |
 |---|---|---|
 | Brazos (08114000 Richmond) | yes | 1.006 |
 | Trinity (08066500 Romayor) | yes | 0.884 |
@@ -76,7 +82,7 @@ S=/Volumes/SSD-Data/aegis-data/E3SM/aegis/phase1/scripts
 . $S/common.sh                                # sets PATH, P1, WORK, DIN, ...
 PY=/Volumes/SSD-Data/aegis-data/conda-envs/e3sm-tools/bin/python   # tools env (env/)
 
-# 0. inputs (static files via CIME inputdata; NLDAS-2 2010-2017, 199.6 GB)
+# 0. inputs (static files via CIME inputdata; NLDAS-2 2010-2017, 204.2 GB = 190.2 GiB)
 bash $S/fetch_nldas2.sh 2010 2017 12          # resumable, size-verified (OSDF, svn fallback)
 $PY  $S/fetch_usgs.py $P1/obs                 # USGS daily discharge + site info
 (cd $P1 && $PY $S/make_inputs.py inputs --tag c261123)
@@ -120,11 +126,20 @@ The E3SM build/run env (`conda-envs/e3sm`) is not modified.
 
 ### Swapping the forcing (ERA5 later)
 
-`apply_forcing` in `scripts/common.sh` is the only forcing-specific code. It
-sets `DATM_MODE` from `FORCING` (`nldas2` → `CLMNLDAS2`, `era5` → `ELMERA5`).
-It also copies any `forcing/<FORCING>/user_datm.streams.txt.*` templates into
-the case, replacing `@P1@`/`@DIN@`. To switch, run with `FORCING=era5` and,
-if needed, add stream files.
+**The ERA5 path is untested end to end.** Only NLDAS-2 has been built and run.
+
+`apply_forcing` in `scripts/common.sh` sets `DATM_MODE` from `FORCING`
+(`nldas2` → `CLMNLDAS2`, `era5` → `ELMERA5`) and copies any
+`forcing/<FORCING>/user_datm.streams.txt.*` templates into the case, replacing
+`@P1@`/`@DIN@`. Stream files alone are not enough to switch forcing:
+
+* `COMPSET` is hard-coded to `2000_DATM%NLDAS2_...` in `scripts/common.sh`
+  (line 22) and must be changed to the ERA5 DATM compset.
+* `DATM_CLMNCEP_YR_START/END/ALIGN` are set in `case_spinup.sh` and
+  `case_production.sh` for NLDAS-2 2010–2014 / 2010–2017 and must match the
+  ERA5 years available.
+* The DATM calendar handling, time-axis offsets and any domain/mesh for the
+  ERA5 grid must be checked; none of this has been exercised.
 
 ## Gauge matching
 
@@ -134,8 +149,12 @@ cells that drain to the same terminal outlet. The score is
 `|ln(areaTotal2 / USGS drainage area)| + 0.25 × distance in cells`, and the
 lowest score wins. The two San Jacinto gauges, W Fork 08068000 (2,145 km²) and
 Cypress Creek 08069000 (738 km²), are at or below the area of one 0.5° cell
-(~2,670 km²), so their area ratios are poor (1.2 and 3.6) and both map to the
-same cell. Their scores mainly show this resolution limit.
+(~2,670 km²). Both gauges physically lie in cell 30.25°N 95.25°W
+(`areaTotal2` 5,341 km², two cells), but both were matched to its western
+neighbour 30.25°N 95.75°W, whose `areaTotal2` (2,670 km²) is only its own cell
+area: a one-cell headwater with no upstream routing. Both simulated series are
+therefore identical and reflect that one cell's local runoff, not routed flow.
+Their area ratios (1.25 and 3.62) and scores mainly show this resolution limit.
 
 ## Known quirks / deviations
 
@@ -181,8 +200,10 @@ same cell. Their scores mainly show this resolution limit.
 
 ### NLDAS-2 download
 
-288 monthly files (3 streams × 96 months, 2010-01 to 2017-12), 199.6 GB
-(185.9 GiB), all checked against the server `Content-Length`. Over OSDF with
+288 monthly files (3 streams × 96 months, 2010-01 to 2017-12), 204.2 GB
+(decimal, 10⁹ bytes) = 190.2 GiB (2³⁰ bytes), the sum of file sizes in bytes
+(re-measured with `stat`; `du` agrees). An earlier draft gave 199.6 GB, which
+was the `du -k` KiB count mislabelled as kB. All files were checked against the server `Content-Length`. Over OSDF with
 12 parallel connections the rate was 4–8 MB/s in total (about 7.5 h).
 
 ### Spin-up (`p1tx.nldas2.spinup`)
@@ -245,7 +266,7 @@ before scoring.
   vs USGS daily mean discharge (Feb 29 dropped). `gauge_daily_sim_obs.csv`
   holds the paired series.
 
-| USGS gauge | Model/USGS area | KGE 2016-01→2017-09 | NSE | Bias | KGE Aug 15–Sep 15 2017 | NSE | Bias | Peak sim/obs | Peak timing (sim − obs) |
+| USGS gauge | Model/USGS total drainage area | KGE 2016-01→2017-09 | NSE | Bias | KGE Aug 15–Sep 15 2017 | NSE | Bias | Peak sim/obs | Peak timing (sim − obs) |
 |---|---|---|---|---|---|---|---|---|---|
 | 08114000 Brazos @ Richmond | 1.01 | 0.67 | 0.70 | −1% | 0.67 | 0.76 | +30% | 1.06 (3,618 vs 3,398 m³/s) | −2 d |
 | 08066500 Trinity @ Romayor | 0.88 | 0.60 | 0.23 | −2% | −0.73 | −2.08 | +140% | 2.52 (6,620 vs 2,628) | +2 d |
@@ -297,5 +318,6 @@ It is not a validated product:
 * There are no reservoirs or water management.
 * It cannot resolve Houston's bayous or urban drainage.
 * River inflow from outside the box is lost (Rio Grande, Red River).
-* One spin-up cycle (2010–2014) is reused for 30 years. The domain mean is in
-  equilibrium, but individual cells are not (see the spin-up table).
+* One spin-up cycle (2010–2014) is reused for 30 years. The domain mean meets
+  the drift criterion, but ZWT still deepens slowly (+0.79 cm/yr over years
+  21–30) and individual cells are not in equilibrium (see the spin-up table).
