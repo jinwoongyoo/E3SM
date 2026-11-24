@@ -192,11 +192,33 @@ weighted. The design criteria are |TWS drift| < 1 mm/yr and |ZWT drift| < 5 cm/y
 | after 30 yr (+10-yr extension, done once as designed) | −0.72 | +0.79 | > 10.1 mm/yr / > 6.8 cm/yr | **pass** |
 
 Positive ZWT drift means the water table is deepening. 46% of cells meet the
-TWS criterion on their own and 90% meet the ZWT criterion. The rest are mostly
-cells whose deep aquifer is still adjusting under the interannual cycle of the
-2010–2014 forcing (the 2011 Texas drought). Figure: `$P1/figures/spinup_drift.png`.
+TWS criterion on their own and 90% meet the ZWT criterion, so individual
+cells still drift even though the domain mean passes. Figure: `$P1/figures/spinup_drift.png`.
 Numbers: `$P1/post/spinup_drift.json` (and `spinup_drift_y20.json` in `$P1/logs/`).
 
 Run times on 6 MPI tasks were 1,601–2,141 s per 5-year segment, 202–270
 simulated years per day. The total was 10,612 s (2.95 h) for 30 years.
+
+### Production (`p1tx.nldas2.prod`)
+
+Hybrid from `p1tx.nldas2.spinup` 0031-01-01, real years 2010–2017
+(`DATM_CLMNCEP_YR_ALIGN=2010`), `NO_LEAP` calendar.
+
+| Segment | Period | Run time | Throughput (sim yr/day) |
+|---|---|---|---|
+| A (hybrid) | 2010-01-01 → 2017-08-15 | 2,513 s | 262 |
+| B (branch, hourly) | 2017-08-15 → 2017-09-15 | 37 s | 197 |
+| C (branch) | 2017-09-15 → 2017-10-01 | 15 s | 254 |
+
+Output in `$WORK/scratch/p1tx.nldas2.prod/run`:
+
+| Tape | Content |
+|---|---|
+| ELM `h0` | monthly |
+| ELM `h1` | daily: 2,828 days, 2010-01-01 → 2017-09-30, no gaps; one file per year plus one per branch |
+| ELM `h2` | hourly: 744 h, 2017-08-15 00:00 → 2017-09-15 00:00 |
+| MOSART `h1`, `h2` | the same daily and hourly sampling |
+
+Feb 29 does not exist in the model or the forcing; the USGS series drop it
+before scoring.
 
