@@ -85,9 +85,12 @@ $PY  $S/fetch_usgs.py $P1/obs                 # USGS daily discharge + site info
 bash $S/case_spinup.sh            # create + build
 FI_PROVIDER=tcp bash $S/case_spinup.sh submit     # 4 x 5 yr (RESUBMIT=3)
 $PY  $S/spinup_drift.py $WORK/scratch/p1tx.nldas2.spinup/run p1tx.nldas2.spinup $P1/post/spinup_drift.json
+# if it fails: extend once by 10 yr, then re-check
+#   cd $CASE_SPINUP && ./xmlchange CONTINUE_RUN=TRUE,STOP_N=5,RESUBMIT=1 && ./case.submit
 
-# 2. production 2010-01-01 -> 2017-09-30 (hybrid from the spin-up restart)
-bash $S/case_production.sh create 0021-01-01
+# 2. production 2010-01-01 -> 2017-09-30 (hybrid from the spin-up restart;
+#    0031-01-01 because the spin-up needed the 10-yr extension)
+bash $S/case_production.sh create 0031-01-01
 bash $S/case_production.sh segA   # -> 2017-08-15
 bash $S/case_production.sh segB   # branch, hourly output -> 2017-09-15
 bash $S/case_production.sh segC   # branch -> 2017-10-01
@@ -170,4 +173,30 @@ same cell. Their scores mainly show this resolution limit.
 
 ## Run log / results
 
-_Filled in as the milestones complete._
+### NLDAS-2 download
+
+288 monthly files (3 streams × 96 months, 2010-01 to 2017-12), 199.6 GB
+(185.9 GiB), all checked against the server `Content-Length`. Over OSDF with
+12 parallel connections the rate was 4–8 MB/s in total (about 7.5 h).
+
+### Spin-up (`p1tx.nldas2.spinup`)
+
+The run is a cold start that loops NLDAS-2 2010–2014 (`DATM_CLMNCEP_YR_ALIGN=1`).
+Drift compares the mean of the last 5-year forcing cycle with the mean of the
+cycle before it, using annual means of the monthly h0 fields, area × landfrac
+weighted. The design criteria are |TWS drift| < 1 mm/yr and |ZWT drift| < 5 cm/yr.
+
+| Check | TWS drift (mm/yr) | ZWT drift (cm/yr) | Worst 5% of cells: TWS / ZWT | Result |
+|---|---|---|---|---|
+| after 20 yr | +1.86 | −0.20 | > 21.3 mm/yr / > 13.6 cm/yr | **fail** (TWS) |
+| after 30 yr (+10-yr extension, done once as designed) | −0.72 | +0.79 | > 10.1 mm/yr / > 6.8 cm/yr | **pass** |
+
+Positive ZWT drift means the water table is deepening. 46% of cells meet the
+TWS criterion on their own and 90% meet the ZWT criterion. The rest are mostly
+cells whose deep aquifer is still adjusting under the interannual cycle of the
+2010–2014 forcing (the 2011 Texas drought). Figure: `$P1/figures/spinup_drift.png`.
+Numbers: `$P1/post/spinup_drift.json` (and `spinup_drift_y20.json` in `$P1/logs/`).
+
+Run times on 6 MPI tasks were 1,601–2,141 s per 5-year segment, 202–270
+simulated years per day. The total was 10,612 s (2.95 h) for 30 years.
+

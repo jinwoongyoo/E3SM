@@ -147,8 +147,12 @@ def spinup_plot(post, figdir):
         txt = (f"last-cycle drift {info['drift_cycle_mean_domain'] * k:+.3f} {crit_unit} "
                f"(criterion |.| < {crit:g}) {'PASS' if info['pass'] else 'FAIL'}\n"
                f"95th pct |cell drift| {info['p95_abs_cell_drift'] * k:.3f} {crit_unit}")
-        ax.text(0.98, 0.96, txt, transform=ax.transAxes, fontsize=8, ha="right", va="top",
+        ax.text(0.98, 0.04, txt, transform=ax.transAxes, fontsize=8, ha="right", va="bottom",
                 bbox=dict(fc="white", ec="0.7"))
+        if y.size > 20:
+            ax.axvline(20.5, color=OI["vermillion"], lw=1.0, ls="--")
+            ax.text(20.7, 0.5, "20-yr check failed:\n+10-yr extension", rotation=90, fontsize=7,
+                    color=OI["vermillion"], va="center", transform=ax.get_xaxis_transform())
         ax.xaxis.set_major_locator(matplotlib.ticker.MaxNLocator(integer=True))
         ax.set_title(lab, fontsize=10)
         ax.grid(alpha=0.3)
