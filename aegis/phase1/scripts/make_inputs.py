@@ -119,7 +119,6 @@ def make_mosart(out, dom):
     inbox[np.ix_(jj, ii)] = True
     inbox = inbox.ravel()
 
-    sub = {}
     dims_map = {}
     for dname in m.dims:
         if dname in ("lat", "ncl0", "ncl2", "ncl4", "ncl6"):

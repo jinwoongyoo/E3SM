@@ -7,7 +7,9 @@
 # usage: fetch_nldas2.sh YEAR_START YEAR_END [NJOBS]   (NJOBS default 4)
 # A file is accepted only when its size equals the server Content-Length and it
 # starts with a NetCDF/HDF5 signature. Partial files (*.part) are resumed with
-# curl -C -. Re-running is safe and only fetches what is missing.
+# curl -C -. Re-running is safe and only fetches what is missing. The script
+# exits non-zero unless all (YEAR_END-YEAR_START+1)*36 files (3 streams x 12
+# months) are reported present, so a worker that dies silently is caught.
 set -euo pipefail
 [ $# -ge 2 ] || { echo "usage: $0 YEAR_START YEAR_END [NJOBS]" >&2; exit 2; }
 Y0=$1; Y1=$2; NJOBS=${3:-4}
@@ -28,9 +30,14 @@ fetch1() {
     for s in "${mirrors[@]}"; do
       # "|| true": under set -e a failed HEAD would otherwise end fetch1
       # silently and orphan the file.
-      len=$( { curl -sIL --connect-timeout 20 --max-time 60 "$s/$rel" || true; } |
-            tr -d '\r' | awk 'tolower($1)=="content-length:"{v=$2} END{print v}')
-      [ -n "$len" ] || continue
+      # only the final response of the redirect chain counts: reset on each
+      # status line (a redirect's own Content-Length must not be used)
+      len=$( { curl -sfIL --connect-timeout 20 --max-time 60 "$s/$rel" || true; } |
+            tr -d '\r' | awk '/^HTTP\//{v=""} tolower($1)=="content-length:"{v=$2} END{print v}')
+      # every NLDAS-2 monthly file is > 1 GB; a missing/zero/odd length (e.g. an
+      # error page) must never be used to accept or prune a file
+      case $len in ''|*[!0-9]*) continue ;; esac
+      [ "$len" -gt 1000000 ] || continue
       if [ -f "$f" ] && [ "$(stat -f %z "$f")" = "$len" ]; then echo "HAVE    $rel"; return 0; fi
       if [ -f "$part" ] && [ "$(stat -f %z "$part")" -gt "$len" ]; then rm -f "$part"; fi
       if [ "$s" = "${mirrors[0]}" ]; then
@@ -65,5 +72,7 @@ for y in $(seq "$Y0" "$Y1"); do for m in 01 02 03 04 05 06 07 08 09 10 11 12; do
   echo "$REL/Precip/ctsmforc.NLDAS2.0.125d.v1.Prec.$y-$m.nc"
   echo "$REL/Solar/ctsmforc.NLDAS2.0.125d.v1.Solr.$y-$m.nc"
 done; done | xargs -n 1 -P "$NJOBS" bash -c 'fetch1 "$1"' _ |
-  awk '/^HAVE/{h++} /^OK/{o++} /^MISSING/{x++} {print; fflush()}
-       END{printf "fetch_nldas2: %d present, %d downloaded, %d missing\n",h,o,x; exit (x>0)}'
+  awk -v want=$(( (Y1 - Y0 + 1) * 36 )) \
+      '/^HAVE/{h++} /^OK/{o++} /^MISSING/{x++} {print; fflush()}
+       END{printf "fetch_nldas2: %d present, %d downloaded, %d missing, %d expected\n",h,o,x,want
+           if (h + o != want) {printf "fetch_nldas2: FAIL, %d files unaccounted for\n", want - h - o; exit 1}}'

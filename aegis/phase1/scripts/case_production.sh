@@ -9,8 +9,11 @@
 # h0 files for 2017-08 and 2017-09 therefore only cover Aug 15-31 and
 # Sep 15-30 (a branch restarts the monthly accumulation); use h1 for those months.
 #
-# usage: case_production.sh create REFDATE   (REFDATE = spin-up restart date, e.g. 0021-01-01)
+# usage: case_production.sh create REFDATE   (REFDATE = spin-up restart date, e.g. 0031-01-01)
 #        case_production.sh segA|segB|segC   (configure + run that segment)
+# Each segment sets RUN_TYPE/RUN_REFCASE/RUN_REFDATE itself, so a segment can be
+# re-run in any order (e.g. segA after segB). create records REFDATE in
+# $CASE/p1_spinup_refdate.txt for segA.
 set -euo pipefail
 . "$(dirname "$0")/common.sh"
 C=$CASE_PROD
@@ -55,6 +58,20 @@ write_nl() {  # write_nl hourly(0|1)
   } > user_nl_mosart
 }
 
+# Branch runs: CPL (restart_file unset in drv_in) and DATM (restfilm unset)
+# read rpointer.drv / rpointer.atm, which point to the newest restart (the end of
+# the last segment run). Point all rpointers at the branch reference date.
+set_rpointers() {  # set_rpointers RUNDIR CASENAME YYYY-MM-DD
+  local r=$1 c=$2 d=$3-00000 f
+  for f in "$c.cpl.r.$d.nc" "$c.datm.rs1.$d.bin" "$c.elm.r.$d.nc" "$c.mosart.r.$d.nc"; do
+    [ -f "$r/$f" ] || { echo "missing restart file $r/$f" >&2; return 1; }
+  done
+  echo "$c.cpl.r.$d.nc" > "$r/rpointer.drv"
+  printf '%s\n%s\n' "$c.datm.r.$d.nc" "$c.datm.rs1.$d.bin" > "$r/rpointer.atm"
+  echo "./$c.elm.r.$d.nc" > "$r/rpointer.lnd"
+  echo "./$c.mosart.r.$d.nc" > "$r/rpointer.rof"
+}
+
 case ${1:-} in
   create)
     REFDATE=${2:?REFDATE}
@@ -77,11 +94,16 @@ case ${1:-} in
     RUNDIR=$(./xmlquery --value RUNDIR); SRUN=$(cd "$CASE_SPINUP" && ./xmlquery --value RUNDIR)
     mkdir -p "$RUNDIR"
     cp -p "$SRUN"/"$SPIN_NAME".*.r*."$REFDATE"-00000.nc "$RUNDIR"/
+    echo "$REFDATE" > p1_spinup_refdate.txt
     ls -la "$RUNDIR"
     ;;
   segA)
     cd "$C"
+    REFDATE=${REFDATE:-$(cat p1_spinup_refdate.txt)}
     write_nl 0
+    # restore the hybrid start explicitly (segB/segC switch the case to branch)
+    ./xmlchange RUN_TYPE=hybrid,RUN_REFCASE="$SPIN_NAME",RUN_REFDATE="$REFDATE",RUN_REFTOD=00000
+    ./xmlchange RUN_STARTDATE=$PROD_START,GET_REFCASE=FALSE
     ./xmlchange CONTINUE_RUN=FALSE,STOP_OPTION=date,STOP_DATE=${SEG_A_STOP//-/}
     ./xmlchange REST_OPTION=nyears,REST_N=1
     nice -n 10 ./case.submit
@@ -93,6 +115,7 @@ case ${1:-} in
     # RUN_REFCASE == CASE -> the driver sets brnch_retain_casename=.true. (ELM needs it)
     ./xmlchange RUN_TYPE=branch,RUN_REFCASE="$CASE_NAME",RUN_REFDATE=$REF,RUN_REFTOD=00000,GET_REFCASE=FALSE
     ./xmlchange CONTINUE_RUN=FALSE,STOP_OPTION=date,STOP_DATE=$STOP,REST_OPTION=nyears,REST_N=1
+    set_rpointers "$(./xmlquery --value RUNDIR)" "$CASE_NAME" "$REF"
     nice -n 10 ./case.submit
     ;;
   *) echo "usage: $0 create REFDATE | segA | segB | segC" >&2; exit 2 ;;

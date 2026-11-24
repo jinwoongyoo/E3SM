@@ -82,7 +82,19 @@ S=/Volumes/SSD-Data/aegis-data/E3SM/aegis/phase1/scripts
 . $S/common.sh                                # sets PATH, P1, WORK, DIN, ...
 PY=/Volumes/SSD-Data/aegis-data/conda-envs/e3sm-tools/bin/python   # tools env (env/)
 
-# 0. inputs (static files via CIME inputdata; NLDAS-2 2010-2017, 204.2 GB = 190.2 GiB)
+# 0. inputs
+# 0a. global static inputs for make_inputs.py / remap_ne30pg2.py. The cases
+#     reference only the Texas subsets, so check_input_data never fetches these.
+E3SM_IN=https://web.lcrc.anl.gov/public/e3sm/inputdata
+for r in share/domains/domain.lnd.r05_IcoswISC30E3r5.231121.nc \
+         lnd/clm2/surfdata_map/surfdata_0.5x0.5_simyr2000_c200624.nc \
+         rof/mosart/MOSART_global_half_20180721a.nc \
+         cpl/gridmaps/ne30pg2/map_r05_to_ne30pg2_traave.20231130.nc; do
+  mkdir -p "$DIN/$(dirname $r)"
+  curl -fL -C - --retry 5 -o "$DIN/$r" "$E3SM_IN/$r"    # resumable
+done
+#     expected sizes (bytes): 25,922,096 / 2,376,363,028 / 42,521,304 / 34,925,320
+# 0b. NLDAS-2 2010-2017: 288 files, 204.2 GB = 190.2 GiB
 bash $S/fetch_nldas2.sh 2010 2017 12          # resumable, size-verified (OSDF, svn fallback)
 $PY  $S/fetch_usgs.py $P1/obs                 # USGS daily discharge + site info
 (cd $P1 && $PY $S/make_inputs.py inputs --tag c261123)
@@ -100,6 +112,8 @@ bash $S/case_production.sh create 0031-01-01
 bash $S/case_production.sh segA   # -> 2017-08-15
 bash $S/case_production.sh segB   # branch, hourly output -> 2017-09-15
 bash $S/case_production.sh segC   # branch -> 2017-10-01
+# each segment resets RUN_TYPE/RUN_REFCASE/RUN_REFDATE (and, for segB/segC, the
+# rpointer files), so a single segment can be re-run on its own
 
 # 3. post-processing (remap to ne30pg2, USGS scoring, figures)
 R=$WORK/scratch/p1tx.nldas2.prod/run; C=p1tx.nldas2.prod
@@ -173,6 +187,12 @@ Their area ratios (1.25 and 3.62) and scores mainly show this resolution limit.
 * The branch segments keep the case name (`RUN_REFCASE == CASE`). The driver
   then sets `brnch_retain_casename=.true.` automatically, so history file
   names continue unbroken.
+* In a branch run the coupler (`restart_file` unset in `drv_in`) and DATM
+  (`restfilm` unset) read `rpointer.drv` / `rpointer.atm`, which point to the
+  newest restart in the run directory. `case_production.sh` therefore rewrites
+  all rpointers to the branch date before `segB`/`segC`, and `segA` restores
+  the hybrid settings, so segments can be re-run in any order. (The original
+  A→B→C sequence did not need this; the fix only matters for re-runs.)
 * `create_clone` does not run `case.setup`, so `case_production.sh` runs it.
 * NaNs that are expected, not errors:
   * One r05 cell (29.25N, 94.25W; Galveston Bay shore) is ~99% wetland with
@@ -190,7 +210,9 @@ Their area ratios (1.25 and 3.62) and scores mainly show this resolution limit.
   it supports HTTP Range, so partial files resume),
   falling back to the svn server (byte-identical, slow, ignores Range).
   Files go to the same relative path under `DIN_LOC_ROOT`, so CIME's
-  `check_input_data` finds them.
+  `check_input_data` finds them. Only the final response's `Content-Length`
+  is used, and only if it is > 1 MB, so an error page can never accept or prune
+  a file. The script exits non-zero unless all (Y1−Y0+1)×36 files are present.
 * ELM ignores history-namelist changes on `CONTINUE_RUN` (history tapes come
   from the restart). So the hourly window (2017-08-15 → 09-15) and the
   following segment are **branch** runs. As a result, the h0 (monthly) files
@@ -262,17 +284,40 @@ before scoring.
   * `ncol_global` gives each column's index in the global ne30pg2 grid.
   * `box_area_frac` and `land_area_frac` tell users how much of each column
     the Texas run covers.
-* `scores.json` / `scores.csv`: MOSART daily `RIVER_DISCHARGE_OVER_LAND_LIQ`
+* `scores.json` / `scores.csv`: MOSART `RIVER_DISCHARGE_OVER_LAND_LIQ`
   vs USGS daily mean discharge (Feb 29 dropped). `gauge_daily_sim_obs.csv`
-  holds the paired series.
+  holds the paired series (`sim_m3s` = UTC days, `sim_localday_m3s` = local
+  days where hourly output exists).
 
-| USGS gauge | Model/USGS total drainage area | KGE 2016-01→2017-09 | NSE | Bias | KGE Aug 15–Sep 15 2017 | NSE | Bias | Peak sim/obs | Peak timing (sim − obs) |
+**Time basis.** Model time is UTC (NLDAS-2 is UTC; stream offset 0), so the
+daily h1 tape holds UTC-day means. USGS daily values are local-day means
+(America/Chicago; CDT = UTC−5 in Aug–Sep). For the Harvey window the model
+daily means are therefore rebuilt from the hourly h2 tape as America/Chicago
+local days, using only days with all their hours on the tape. h2 ends at
+2017-09-15 00Z, so the window scored is **Aug 15 – Sep 13 local (30 days)**.
+The full-period scores keep the UTC-day h1 means, with a residual 5–6 h
+offset. Using fixed CST (UTC−6) instead of America/Chicago changes no peak
+date and the window NSE by ≤ 0.04.
+
+Peak timing is the calendar-date difference sim − obs. The CTSM NLDAS-2
+files omit Feb 29, so model dates are real dates, and a difference of model
+record indices would undercount by one day across 2016-02-29; no scored peak
+pair straddles that date, so the choice does not change any number. On ties the first
+(earliest) day is the peak; tied days are listed in `scores.json`
+(`peak_*_tie_dates`). The Brazos observed peak is a tie (3,398 m³/s on both
+Aug 31 and Sep 1), so its timing is −3 d against Aug 31 (−4 d against Sep 1).
+
+| USGS gauge | Model/USGS total drainage area | KGE 2016-01→2017-09 (UTC days) | NSE | Bias | KGE Aug 15–Sep 13 2017 (local days) | NSE | Bias | Peak sim/obs | Peak timing (sim − obs) |
 |---|---|---|---|---|---|---|---|---|---|
-| 08114000 Brazos @ Richmond | 1.01 | 0.67 | 0.70 | −1% | 0.67 | 0.76 | +30% | 1.06 (3,618 vs 3,398 m³/s) | −2 d |
-| 08066500 Trinity @ Romayor | 0.88 | 0.60 | 0.23 | −2% | −0.73 | −2.08 | +140% | 2.52 (6,620 vs 2,628) | +2 d |
-| 08068000 W Fk San Jacinto nr Conroe | 1.25 | 0.28 | 0.32 | −13% | 0.26 | 0.30 | +2% | 0.30 (743 vs 2,517) | +3 d |
-| 08069000 Cypress Ck nr Westfield | 3.62 | 0.26 | 0.10 | +62% | −0.13 | −0.11 | +106% | 0.88 (743 vs 841) | +4 d |
-| 08162000 Colorado @ Wharton | 1.11 | 0.29 | 0.38 | −1% | 0.26 | 0.48 | −28% | 0.38 (939 vs 2,478) | −1 d |
+| 08114000 Brazos @ Richmond | 1.01 | 0.67 | 0.70 | −1% | 0.69 | 0.75 | +28% | 1.03 (3,487 vs 3,398 m³/s) | −3 d |
+| 08066500 Trinity @ Romayor | 0.88 | 0.60 | 0.23 | −2% | −0.69 | −1.95 | +135% | 2.50 (6,568 vs 2,628) | +2 d |
+| 08068000 W Fk San Jacinto nr Conroe | 1.25 | 0.28 | 0.32 | −13% | 0.26 | 0.29 | −1% | 0.30 (748 vs 2,517) | −1 d |
+| 08069000 Cypress Ck nr Westfield | 3.62 | 0.26 | 0.10 | +62% | −0.07 | −0.05 | +100% | 0.89 (748 vs 841) | 0 d |
+| 08162000 Colorado @ Wharton | 1.11 | 0.29 | 0.38 | −1% | 0.25 | 0.46 | −29% | 0.37 (927 vs 2,478) | −1 d |
+
+The peak columns are for the Harvey window. An earlier version of this table
+scored the window on UTC days (to Sep 15); that shifted the San Jacinto peak
+timing to +3 d / +4 d and the Brazos to −2 d.
 
 How to read these scores:
 
@@ -281,19 +326,24 @@ How to read these scores:
 * The Trinity peak at Romayor is 2.5 times too high. This is consistent with
   the run having no reservoir regulation: MOSART `wrmflag=.false.`, while Lake
   Livingston sits just upstream of the gauge.
-* The Colorado peak is 2.6 times too low. This was not diagnosed; candidate
+* The Colorado peak is 2.7 times too low. This was not diagnosed; candidate
   causes are the 0.5° smoothing of the intense rain over the lower basin and
   the default runoff parameters.
 * The two San Jacinto gauges share one 0.5° cell, so their simulated series
   are identical. They mainly measure the resolution limit (see "Gauge
-  matching").
+  matching"). Their peak timing is not robust: the simulated series has two
+  almost equal peaks, 748 m³/s on Aug 28 and 742 m³/s on Sep 1 (local days),
+  and on UTC days the Sep 1 peak is the larger one.
 * Recession and baseflow are too high at most gauges, both in the weeks after
   the peak and in the dry summer.
 
 Figures (`$P1/figures`, Okabe–Ito / cividis / BrBG colour-blind-safe palettes):
 
 * `hydrographs_2017JunSep.png`: daily discharge, observed vs model, Jun–Sep
-  2017, with the Harvey rain window shaded.
+  2017, with the Harvey rain window shaded. The model is drawn on UTC days
+  (dashed) and, for Aug 15–Sep 13, on local days (solid; the basis of the
+  scores shown). Panel notes flag the Trinity (no reservoirs) and the shared
+  San Jacinto headwater cell.
 * `soilwater10cm_harvey.png`: `SOILWATER_10CM` on 2017-08-24 and on
   2017-08-31, and their difference.
 * `spinup_drift.png`: domain-mean annual TWS and ZWT over the 30-year
@@ -304,9 +354,9 @@ sha256 of the products (they are not in git):
 ```
 bd03611ba23c21845cc91764ca95bd79c8020690f50a74c9a52c7e846a5b2532  post/elm_daily_ne30pg2_texas.nc
 ddf7925ef1769c6b5d857651cb5ad183c21d6172a206f72fd896d0a017b33328  post/elm_hourly_ne30pg2_texas.nc
-824f45224827bae78c861c56960270d3ead90ba155bf3eb0ed18ce534828339e  post/scores.json
-62f074617a6c145be266ca4b43bdf7433c51a593f872b699f01f8f7e76dadd82  post/scores.csv
-3f09f1a7ac311352d4d1f9fc4a1212650b83bc0236ffc8a4eb5665b0612f5f49  post/gauge_daily_sim_obs.csv
+b6a1f9e98ef22fbe598708f651ce19ded5a87cb9e004d6fa47f3ce8e181db457  post/scores.json
+c013351b0d78f47cb6f76371c33dea572629b11af9c1fb9d6438945da38b3990  post/scores.csv
+30bd267be9f23c2f09b3653513248b00d7a66a37960fe72474c752bf835816a9  post/gauge_daily_sim_obs.csv
 0ea248236bfb81254fa8893f90e0a8622056634de181de52b49130af7f4bd207  post/spinup_drift.json
 ```
 

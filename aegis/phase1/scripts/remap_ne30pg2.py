@@ -27,8 +27,8 @@ import xarray as xr
 
 from p1lib import open_hist
 
-DEFAULT_MAP = ("/Volumes/SSD-Data/aegis-data/e3sm-work/inputdata/cpl/gridmaps/ne30pg2/"
-               "map_r05_to_ne30pg2_traave.20231130.nc")
+DIN = os.environ.get("DIN_LOC_ROOT", "/Volumes/SSD-Data/aegis-data/e3sm-work/inputdata")
+DEFAULT_MAP = os.path.join(DIN, "cpl/gridmaps/ne30pg2/map_r05_to_ne30pg2_traave.20231130.nc")
 KEY = ["H2OSOI", "SOILWATER_10CM", "TSOI", "H2OSNO", "QRUNOFF", "QOVER", "QDRAI", "ZWT", "TWS",
        "FSH", "EFLX_LH_TOT", "RAIN", "TSA"]
 
@@ -45,7 +45,7 @@ def main():
     fields = a.fields.split(",")
     files = sorted(glob.glob(os.path.join(a.rundir, f"{a.case}.elm.{a.tape}.*.nc")))
     if not files:
-        raise SystemExit("no files")
+        raise SystemExit(f"no {a.case}.elm.{a.tape}.*.nc files in {a.rundir}")
     ds = open_hist(files, fields)
 
     m = xr.open_dataset(a.map)
@@ -117,6 +117,7 @@ def main():
     enc["time"] = {"units": "days since 2010-01-01 00:00:00", "calendar": "noleap"}
     enc["time_bounds"] = {"units": "days since 2010-01-01 00:00:00", "calendar": "noleap"}
     out["time"].attrs.update(bounds="time_bounds", long_name="midpoint of averaging interval")
+    os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
     tmp = a.out + ".part"
     out.to_netcdf(tmp, encoding=enc, unlimited_dims=["time"])
     os.replace(tmp, a.out)

@@ -14,13 +14,7 @@ import time
 import pandas as pd
 import requests
 
-GAUGES = {
-    "08114000": "Brazos Rv at Richmond, TX",
-    "08066500": "Trinity Rv at Romayor, TX",
-    "08068000": "W Fk San Jacinto Rv nr Conroe, TX",
-    "08069000": "Cypress Ck nr Westfield, TX",
-    "08162000": "Colorado Rv at Wharton, TX",
-}
+from p1lib import GAUGES
 CFS_TO_M3S = 0.028316846592
 SQMI_TO_KM2 = 2.589988110336
 BASE = "https://waterservices.usgs.gov/nwis"

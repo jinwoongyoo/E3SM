@@ -32,6 +32,8 @@ def main():
     ap.add_argument("--cycle-years", type=int, default=5)
     a = ap.parse_args()
     files = sorted(glob.glob(os.path.join(a.rundir, f"{a.case}.elm.h0.*.nc")))
+    if not files:
+        raise SystemExit(f"no {a.case}.elm.h0.*.nc files in {a.rundir}")
     first = xr.open_dataset(files[0], decode_times=False)
     stack = {v: [] for v in ("TWS", "ZWT")}
     for f in files:
@@ -79,6 +81,7 @@ def main():
                                           for k in range(nyear)],
         }
     res["pass"] = all(r["pass"] for r in res["variables"].values())
+    os.makedirs(os.path.dirname(os.path.abspath(a.outjson)), exist_ok=True)
     with open(a.outjson, "w") as f:
         json.dump(res, f, indent=1)
     print(json.dumps({k: (v if k != "variables" else {n: {kk: vv for kk, vv in r.items() if kk != "domain_mean_annual_series"}

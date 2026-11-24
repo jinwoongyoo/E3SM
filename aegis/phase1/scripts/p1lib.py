@@ -79,6 +79,9 @@ def open_hist(files, variables=None):
     Returns a Dataset on the noleap calendar (cftime) with time_bounds."""
     import xarray as xr
     import pandas as pd  # noqa: F401  (xarray needs it)
+    files = list(files)
+    if not files:
+        raise ValueError("open_hist: no history files given (check RUNDIR, CASE and tape name)")
     coder = xr.coders.CFDatetimeCoder(use_cftime=True)
     parts = []
     for f in sorted(files):

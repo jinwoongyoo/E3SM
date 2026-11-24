@@ -7,8 +7,9 @@ export TMPDIR=/Volumes/SSD-Data/aegis-data/e3sm-work/tmp
 
 E3SM_ROOT=/Volumes/SSD-Data/aegis-data/E3SM
 WORK=/Volumes/SSD-Data/aegis-data/e3sm-work
-P1=$WORK/phase1                      # phase-1 data root
-DIN=$WORK/inputdata                  # CIME DIN_LOC_ROOT
+export P1=$WORK/phase1               # phase-1 data root
+export DIN_LOC_ROOT=${DIN_LOC_ROOT:-$WORK/inputdata}   # CIME inputdata root
+DIN=$DIN_LOC_ROOT                    # (read by make_inputs.py, remap_ne30pg2.py, fetch_nldas2.sh)
 TOOLS_PY=/Volumes/SSD-Data/aegis-data/conda-envs/e3sm-tools/bin/python
 SCRIPTS=$E3SM_ROOT/aegis/phase1/scripts
 
@@ -53,6 +54,3 @@ apply_forcing() {   # usage: apply_forcing CASEDIR
     done
   fi
 }
-
-# Run a command with a wall-clock limit (no `timeout` binary on macOS).
-with_alarm() { local s=$1; shift; perl -e 'alarm shift; exec @ARGV' "$s" "$@"; }

@@ -28,6 +28,11 @@ OI = {"black": "#000000", "orange": "#E69F00", "sky": "#56B4E9", "green": "#009E
 HARVEY = ("2017-08-25", "2017-09-01")
 HOUSTON = (29.76, -95.37)
 SUBTITLE = "E3SM ELM-SP + MOSART r05, NLDAS-2 forcing, uncalibrated baseline"
+PANEL_NOTE = {
+    "08066500": "no reservoirs in the model (Lake Livingston upstream)",
+    "08068000": "shared 1-cell headwater cell (no upstream routing); same model series as Cypress Ck",
+    "08069000": "shared 1-cell headwater cell (no upstream routing); same model series as W Fork",
+}
 
 
 def hydrographs(post, figdir, d0="2017-06-01", d1="2017-09-30"):
@@ -41,19 +46,26 @@ def hydrographs(post, figdir, d0="2017-06-01", d1="2017-09-30"):
         ax.axvspan(pd.Timestamp(HARVEY[0]), pd.Timestamp(HARVEY[1]), color="0.88", lw=0,
                    label="Harvey rainfall (Aug 25 - Sep 1)")
         ax.plot(t, d.obs_m3s, color=OI["black"], lw=1.6, label="USGS observed")
-        ax.plot(t, d.sim_m3s, color=OI["vermillion"], lw=1.6, ls="--", label="E3SM MOSART")
+        ax.plot(t, d.sim_m3s, color=OI["vermillion"], lw=1.6, ls="--", label="E3SM MOSART (UTC days)")
+        if "sim_localday_m3s" in d:
+            ax.plot(t, d.sim_localday_m3s, color=OI["blue"], lw=1.0,
+                    label="E3SM MOSART (local days, from hourly; used for the scores shown)")
         g = sc["gauges"][site]
         m = g["periods"].get("2017-08-15_2017-09-15", {})
         ax.set_title(f"{g['name']} (USGS {site}); cell {g['cell_lat']:.2f}N {abs(g['cell_lon']):.2f}W, "
                      f"model/USGS area {g['area_ratio_model_over_usgs']:.2f}", fontsize=9, loc="left")
         if "KGE" in m:
-            ax.text(0.01, 0.80, f"Aug 15-Sep 15: KGE {m['KGE']:.2f}, NSE {m['NSE']:.2f}, "
+            span = f"{m.get('first_day', '')[5:]}..{m.get('last_day', '')[5:]}"
+            ax.text(0.01, 0.80, f"{span} (local days): KGE {m['KGE']:.2f}, NSE {m['NSE']:.2f}, "
                     f"peak sim/obs {m['peak_ratio_sim_over_obs']:.2f}, timing {m['peak_timing_error_days']:+d} d",
                     transform=ax.transAxes, fontsize=8)
+        if site in PANEL_NOTE:
+            ax.text(0.01, 0.64, PANEL_NOTE[site], transform=ax.transAxes, fontsize=8, style="italic",
+                    color="0.25")
         ax.set_ylabel("Discharge (m$^3$ s$^{-1}$)", fontsize=8)
         ax.set_ylim(bottom=0)
         ax.grid(alpha=0.3)
-    axs[0].legend(fontsize=8, loc="upper left", bbox_to_anchor=(0.0, 0.78), frameon=False)
+    axs[0].legend(fontsize=7.5, loc="upper left", bbox_to_anchor=(0.0, 0.78), frameon=False)
     axs[-1].xaxis.set_major_formatter(mdates.DateFormatter("%b %d"))
     fig.suptitle(f"Daily discharge, Jun-Sep 2017\n{SUBTITLE}", fontsize=11)
     fig.tight_layout()
@@ -72,12 +84,19 @@ def _map_axes(fig, n):
         cartopy.config["data_dir"] = os.environ.get(
             "CARTOPY_DATA_DIR", "/Volumes/SSD-Data/aegis-data/e3sm-work/phase1/cartopy_data")
         axs = [fig.add_subplot(1, n, k + 1, projection=ccrs.PlateCarree()) for k in range(n)]
-        for ax in axs:
+        feats = []
+        for feat, kw in ((cfeature.STATES.with_scale("50m"), dict(lw=0.4, edgecolor="0.3")),
+                         (cfeature.COASTLINE.with_scale("50m"), dict(lw=0.6))):
             try:
-                ax.add_feature(cfeature.STATES.with_scale("50m"), lw=0.4, edgecolor="0.3")
-                ax.add_feature(cfeature.COASTLINE.with_scale("50m"), lw=0.6)
-            except Exception as e:  # offline: no Natural Earth data
-                print("cartopy features unavailable:", e)
+                # add_feature is lazy (data are fetched at draw time); load the
+                # geometries now so a missing download fails here, not in savefig
+                feats.append((cfeature.ShapelyFeature(list(feat.geometries()), feat.crs,
+                                                      facecolor="none", **kw)))
+            except Exception as e:  # offline and not cached: draw without it
+                print("cartopy feature unavailable:", e)
+        for ax in axs:
+            for f in feats:
+                ax.add_feature(f)
         return axs, ccrs.PlateCarree()
     except ImportError:
         return [fig.add_subplot(1, n, k + 1) for k in range(n)], None
@@ -103,12 +122,12 @@ def soilwater_maps(rundir, case, figdir, days=("2017-08-24", "2017-08-31")):
     for ax, v, d in zip(axs[:2], x, days):
         pm = ax.pcolormesh(le, ae, v, cmap="cividis", vmin=0, vmax=vmax, **kw)
         ax.set_title(f"SOILWATER_10CM, daily mean {d}", fontsize=10)
-        fig.colorbar(pm, ax=ax, shrink=0.8, label="kg m$^{-2}$ (= mm water, top 10 cm)")
+        fig.colorbar(pm, ax=ax, shrink=0.8, extend="max", label="kg m$^{-2}$ (= mm water, top 10 cm)")
     lim = np.nanpercentile(np.abs(diff), 99)
     pm = axs[2].pcolormesh(le, ae, diff, cmap="BrBG", vmin=-lim, vmax=lim, **kw)
     axs[2].set_title(f"Difference {days[1]} minus {days[0]}", fontsize=10)
-    fig.colorbar(pm, ax=axs[2], shrink=0.8, label="kg m$^{-2}$")
-    for ax in axs:
+    fig.colorbar(pm, ax=axs[2], shrink=0.8, extend="both", label="kg m$^{-2}$")
+    for k, ax in enumerate(axs):
         ax.plot(HOUSTON[1], HOUSTON[0], marker="*", color=OI["vermillion"], ms=11, mec="k", **kw)
         for g in GAUGES.values():
             ax.plot(g["lon"], g["lat"], marker="^", color=OI["yellow"], ms=6, mec="k", **kw)
@@ -117,8 +136,9 @@ def soilwater_maps(rundir, case, figdir, days=("2017-08-24", "2017-08-31")):
             gl = ax.gridlines(draw_labels=True, lw=0.2, color="0.5",
                               xlocs=np.arange(-106, -92, 4), ylocs=np.arange(26, 38, 2))
             gl.top_labels = gl.right_labels = False
+            gl.left_labels = k == 0
     fig.suptitle(f"Near-surface soil water before/after Hurricane Harvey (star: Houston; triangles: USGS gauges)\n"
-                 f"{SUBTITLE}", fontsize=11)
+                 f"{SUBTITLE}", fontsize=11, y=0.93)
     out = os.path.join(figdir, "soilwater10cm_harvey.png")
     fig.savefig(out, dpi=150, bbox_inches="tight")
     plt.close(fig)
