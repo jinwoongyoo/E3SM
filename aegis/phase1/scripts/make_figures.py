@@ -53,7 +53,7 @@ def hydrographs(post, figdir, d0="2017-06-01", d1="2017-09-30"):
         ax.set_ylabel("Discharge (m$^3$ s$^{-1}$)", fontsize=8)
         ax.set_ylim(bottom=0)
         ax.grid(alpha=0.3)
-    axs[0].legend(fontsize=8, loc="upper right")
+    axs[0].legend(fontsize=8, loc="upper left", bbox_to_anchor=(0.0, 0.78), frameon=False)
     axs[-1].xaxis.set_major_formatter(mdates.DateFormatter("%b %d"))
     fig.suptitle(f"Daily discharge, Jun-Sep 2017\n{SUBTITLE}", fontsize=11)
     fig.tight_layout()

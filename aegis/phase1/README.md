@@ -76,7 +76,7 @@ S=/Volumes/SSD-Data/aegis-data/E3SM/aegis/phase1/scripts
 . $S/common.sh                                # sets PATH, P1, WORK, DIN, ...
 PY=/Volumes/SSD-Data/aegis-data/conda-envs/e3sm-tools/bin/python   # tools env (env/)
 
-# 0. inputs (static files via CIME inputdata; NLDAS-2 2010-2017, ~210 GB)
+# 0. inputs (static files via CIME inputdata; NLDAS-2 2010-2017, 199.6 GB)
 bash $S/fetch_nldas2.sh 2010 2017 12          # resumable, size-verified (OSDF, svn fallback)
 $PY  $S/fetch_usgs.py $P1/obs                 # USGS daily discharge + site info
 (cd $P1 && $PY $S/make_inputs.py inputs --tag c261123)
@@ -138,6 +138,12 @@ Cypress Creek 08069000 (738 km²), are at or below the area of one 0.5° cell
 same cell. Their scores mainly show this resolution limit.
 
 ## Known quirks / deviations
+
+* Spin-up length: the design's 20 years failed the TWS criterion
+  (+1.86 mm/yr), so the run was extended by 10 years once, as the design
+  allows. Production starts from 0031-01-01.
+* MOSART runs without reservoirs (`wrmflag=.false.`, the default). CIME still
+  requires and stages the default reservoir parameter file.
 
 * The driver's default is `end_restart=.false.`, so `case_production.sh`
   sets `end_restart = .true.` in `user_nl_cpl`. Without it, segment A writes
@@ -222,3 +228,74 @@ Output in `$WORK/scratch/p1tx.nldas2.prod/run`:
 Feb 29 does not exist in the model or the forcing; the USGS series drop it
 before scoring.
 
+
+### Post-processing (`$P1/post`, `$P1/figures`)
+
+* `elm_daily_ne30pg2_texas.nc` (2,828 days) and `elm_hourly_ne30pg2_texas.nc`
+  (744 h) hold the 13 key ELM fields remapped to ne30pg2 with
+  `map_r05_to_ne30pg2_traave.20231130.nc`. Weights are S × landfrac over the
+  valid box cells, so the remap conserves the land-weighted mean (checked to
+  1e-9). The files cover the 85 ne30pg2 columns that overlap the box:
+  * 57 columns lie fully inside the box.
+  * 4 columns are all ocean, so they are NaN.
+  * `ncol_global` gives each column's index in the global ne30pg2 grid.
+  * `box_area_frac` and `land_area_frac` tell users how much of each column
+    the Texas run covers.
+* `scores.json` / `scores.csv`: MOSART daily `RIVER_DISCHARGE_OVER_LAND_LIQ`
+  vs USGS daily mean discharge (Feb 29 dropped). `gauge_daily_sim_obs.csv`
+  holds the paired series.
+
+| USGS gauge | Model/USGS area | KGE 2016-01→2017-09 | NSE | Bias | KGE Aug 15–Sep 15 2017 | NSE | Bias | Peak sim/obs | Peak timing (sim − obs) |
+|---|---|---|---|---|---|---|---|---|---|
+| 08114000 Brazos @ Richmond | 1.01 | 0.67 | 0.70 | −1% | 0.67 | 0.76 | +30% | 1.06 (3,618 vs 3,398 m³/s) | −2 d |
+| 08066500 Trinity @ Romayor | 0.88 | 0.60 | 0.23 | −2% | −0.73 | −2.08 | +140% | 2.52 (6,620 vs 2,628) | +2 d |
+| 08068000 W Fk San Jacinto nr Conroe | 1.25 | 0.28 | 0.32 | −13% | 0.26 | 0.30 | +2% | 0.30 (743 vs 2,517) | +3 d |
+| 08069000 Cypress Ck nr Westfield | 3.62 | 0.26 | 0.10 | +62% | −0.13 | −0.11 | +106% | 0.88 (743 vs 841) | +4 d |
+| 08162000 Colorado @ Wharton | 1.11 | 0.29 | 0.38 | −1% | 0.26 | 0.48 | −28% | 0.38 (939 vs 2,478) | −1 d |
+
+How to read these scores:
+
+* The Brazos is the only gauge where the uncalibrated model is
+  reasonable during Harvey.
+* The Trinity peak at Romayor is 2.5 times too high. This is consistent with
+  the run having no reservoir regulation: MOSART `wrmflag=.false.`, while Lake
+  Livingston sits just upstream of the gauge.
+* The Colorado peak is 2.6 times too low. This was not diagnosed; candidate
+  causes are the 0.5° smoothing of the intense rain over the lower basin and
+  the default runoff parameters.
+* The two San Jacinto gauges share one 0.5° cell, so their simulated series
+  are identical. They mainly measure the resolution limit (see "Gauge
+  matching").
+* Recession and baseflow are too high at most gauges, both in the weeks after
+  the peak and in the dry summer.
+
+Figures (`$P1/figures`, Okabe–Ito / cividis / BrBG colour-blind-safe palettes):
+
+* `hydrographs_2017JunSep.png`: daily discharge, observed vs model, Jun–Sep
+  2017, with the Harvey rain window shaded.
+* `soilwater10cm_harvey.png`: `SOILWATER_10CM` on 2017-08-24 and on
+  2017-08-31, and their difference.
+* `spinup_drift.png`: domain-mean annual TWS and ZWT over the 30-year
+  spin-up.
+
+sha256 of the products (they are not in git):
+
+```
+bd03611ba23c21845cc91764ca95bd79c8020690f50a74c9a52c7e846a5b2532  post/elm_daily_ne30pg2_texas.nc
+ddf7925ef1769c6b5d857651cb5ad183c21d6172a206f72fd896d0a017b33328  post/elm_hourly_ne30pg2_texas.nc
+824f45224827bae78c861c56960270d3ead90ba155bf3eb0ed18ce534828339e  post/scores.json
+62f074617a6c145be266ca4b43bdf7433c51a593f872b699f01f8f7e76dadd82  post/scores.csv
+3f09f1a7ac311352d4d1f9fc4a1212650b83bc0236ffc8a4eb5665b0612f5f49  post/gauge_daily_sim_obs.csv
+0ea248236bfb81254fa8893f90e0a8622056634de181de52b49130af7f4bd207  post/spinup_drift.json
+```
+
+### Limitations (summary)
+
+This is an uncalibrated ELM-SP + MOSART baseline at 0.5° forced by NLDAS-2.
+It is not a validated product:
+
+* There are no reservoirs or water management.
+* It cannot resolve Houston's bayous or urban drainage.
+* River inflow from outside the box is lost (Rio Grande, Red River).
+* One spin-up cycle (2010–2014) is reused for 30 years. The domain mean is in
+  equilibrium, but individual cells are not (see the spin-up table).
