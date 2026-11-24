@@ -26,13 +26,27 @@ fetch1() {
   mkdir -p "$(dirname "$f")"
   for attempt in 1 2 3 4 5; do
     for s in "${mirrors[@]}"; do
-      len=$(curl -sIL --connect-timeout 20 --max-time 60 "$s/$rel" |
+      # "|| true": under set -e a failed HEAD would otherwise end fetch1
+      # silently and orphan the file.
+      len=$( { curl -sIL --connect-timeout 20 --max-time 60 "$s/$rel" || true; } |
             tr -d '\r' | awk 'tolower($1)=="content-length:"{v=$2} END{print v}')
       [ -n "$len" ] || continue
       if [ -f "$f" ] && [ "$(stat -f %z "$f")" = "$len" ]; then echo "HAVE    $rel"; return 0; fi
       if [ -f "$part" ] && [ "$(stat -f %z "$part")" -gt "$len" ]; then rm -f "$part"; fi
-      curl -sfL --connect-timeout 20 --speed-limit 20000 --speed-time 60 -C - \
-           -o "$part" "$s/$rel" || true
+      if [ "$s" = "${mirrors[0]}" ]; then
+        curl -sfL --connect-timeout 20 --speed-limit 20000 --speed-time 60 -C - \
+             -o "$part" "$s/$rel" || true
+      else
+        # svn ignores Range, so "-C -" can never finish a partial file there:
+        # fetch the whole file and keep it only if it is complete.
+        curl -sfL --connect-timeout 20 --speed-limit 20000 --speed-time 60 \
+             -o "$part.svn" "$s/$rel" || true
+        if [ -f "$part.svn" ] && [ "$(stat -f %z "$part.svn")" = "$len" ]; then
+          mv -f "$part.svn" "$part"
+        else
+          rm -f "$part.svn"
+        fi
+      fi
       if [ -f "$part" ] && [ "$(stat -f %z "$part")" = "$len" ]; then
         m=$(LC_ALL=C head -c 4 "$part" | od -An -tx1 | tr -d ' \n')
         case $m in 43444601|43444602|43444605|89484446) ;;
