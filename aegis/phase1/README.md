@@ -181,6 +181,10 @@ global chunk per 12-h forecast, so whole chunks are read: ~3.9 GB/month,
 Not faster: the GDEX THREDDS OPeNDAP server (server-side box subset) answers
 ~11 s per 6 forecasts and returns HTTP 429 under sustained use (~50 min/month);
 CDS queues one request per account; the old `era5-pds` bucket is closed.
+Every file listed in a stream must exist: in `cycle` mode DATM reads the time
+axis of the listed files from the last one backwards at initialisation. To
+start the spin-up before 2015–2017 are fetched, drop those entries from the
+case copies first: `sed -i '' '/\.201[5-7]-[0-9][0-9]\.nc/d' user_datm.streams.txt.ELMERA5.*`.
 Years and segment dates in `case_spinup.sh`/`case_production.sh` are shared
 with NLDAS-2 (2010–2014 loop, 2010–2017 production).
 
