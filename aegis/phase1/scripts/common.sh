@@ -20,22 +20,27 @@ DOMAIN_FILE=domain.lnd.r05_texas.$INPUT_TAG.nc
 SURF_FILE=$INPUTS/surfdata_r05_texas_simyr2000.$INPUT_TAG.nc
 MOSART_FILE=$INPUTS/MOSART_r05_texas.$INPUT_TAG.nc
 
-COMPSET=2000_DATM%NLDAS2_ELM%SP_SICE_SOCN_MOSART_SGLC_SWAV
+# FORCING selects the DATM forcing (nldas2 | era5); see apply_forcing below
+FORCING=${FORCING:-nldas2}
+case $FORCING in
+  nldas2) COMPSET=2000_DATM%NLDAS2_ELM%SP_SICE_SOCN_MOSART_SGLC_SWAV ;;
+  era5)   COMPSET=2000_DATM%ERA5_ELM%SP_SICE_SOCN_MOSART_SGLC_SWAV ;;   # = IERA5ELM
+  *) echo "unknown FORCING=$FORCING" >&2; return 1 2>/dev/null || exit 1 ;;
+esac
 RES=ELMMOS_USRDAT
 MACH=aegis-mac
 COMPILER=gnu
 NTASKS=6                             # machine cap (shared with a CI runner)
 DRIVER=${DRIVER:-moab}
 
-CASE_SPINUP=${CASE_SPINUP:-$P1/cases/p1tx.nldas2.spinup}
-CASE_PROD=${CASE_PROD:-$P1/cases/p1tx.nldas2.prod}
+CASE_SPINUP=${CASE_SPINUP:-$P1/cases/p1tx.$FORCING.spinup}
+CASE_PROD=${CASE_PROD:-$P1/cases/p1tx.$FORCING.prod}
 
 # ---------------------------------------------------------------------------
-# Forcing hook. Everything forcing-specific lives here; swapping NLDAS-2 for
-# ERA5 later means adding a branch below (DATM_MODE + user_datm.streams.txt.*
-# files in aegis/phase1/forcing/<name>/) and setting FORCING=era5.
+# Forcing hook: DATM_MODE plus optional user_datm.streams.txt.* templates in
+# aegis/phase1/forcing/<FORCING>/ (era5: the Texas subset built by
+# era5_forcing.py, since E3SM's ERA5 inputdata only has 1979 and 1981).
 # ---------------------------------------------------------------------------
-FORCING=${FORCING:-nldas2}
 apply_forcing() {   # usage: apply_forcing CASEDIR
   local c=$1
   case $FORCING in

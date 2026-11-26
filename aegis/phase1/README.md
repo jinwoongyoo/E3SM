@@ -138,22 +138,45 @@ Run the Python scripts from `scripts/` (or set `PYTHONPATH=$S`); they share
 
 The E3SM build/run env (`conda-envs/e3sm`) is not modified.
 
-### Swapping the forcing (ERA5 later)
+### ERA5 forcing (`FORCING=era5`)
 
-**The ERA5 path is untested end to end.** Only NLDAS-2 has been built and run.
+`FORCING` in `scripts/common.sh` selects the compset, `DATM_MODE`, case names
+(`p1tx.<FORCING>.{spinup,prod}`) and the stream templates in
+`forcing/<FORCING>/` (`@P1@`/`@DIN@` substituted at case creation):
 
-`apply_forcing` in `scripts/common.sh` sets `DATM_MODE` from `FORCING`
-(`nldas2` → `CLMNLDAS2`, `era5` → `ELMERA5`) and copies any
-`forcing/<FORCING>/user_datm.streams.txt.*` templates into the case, replacing
-`@P1@`/`@DIN@`. Stream files alone are not enough to switch forcing:
+| FORCING | COMPSET DATM | DATM_MODE | streams |
+|---|---|---|---|
+| `nldas2` (default) | `DATM%NLDAS2` | `CLMNLDAS2` | stock |
+| `era5` | `DATM%ERA5` (= `IERA5ELM`) | `ELMERA5` | `forcing/era5/` (Texas subset) |
 
-* `COMPSET` is hard-coded to `2000_DATM%NLDAS2_...` in `scripts/common.sh`
-  (line 22) and must be changed to the ERA5 DATM compset.
-* `DATM_CLMNCEP_YR_START/END/ALIGN` are set in `case_spinup.sh` and
-  `case_production.sh` for NLDAS-2 2010–2014 / 2010–2017 and must match the
-  ERA5 years available.
-* The DATM calendar handling, time-axis offsets and any domain/mesh for the
-  ERA5 grid must be checked; none of this has been exercised.
+E3SM's ERA5 inputdata (`atm_forcing.datm7.ERA.0.25d.v5.c180614`) only holds
+1979 and 1981, so `scripts/era5_forcing.py` builds a 0.25° Texas subset
+(lat 24.5–38, lon 252–268, 55×65) in the identical ELMERA5 format: noleap
+(Feb 29 dropped), hourly stamps from 00Z, mean fluxes as the mean over the
+hour ending at the stamp, `msdfswrf = sdswrf − sdirswrf`,
+`w10 = hypot(u10, v10)`, and the stock stream offsets/tintalgo. Source is the
+NSF NCAR ERA5 mirror on AWS (RDA ds633.0, `nsf-ncar-era5.s3.amazonaws.com`,
+anonymous); `--source cds` also works but CDS queues one request per account.
+
+Validated against E3SM's own 1981-03 files over the box (all 744 steps,
+9 fields): identical time axes, max |diff| / max |ref| ≤ 4e-5 (GRIB packing).
+
+```bash
+# era5 env (conda-forge): python=3.12 netcdf4 numpy h5py fsspec aiohttp requests (cdsapi for --source cds)
+PY=/Volumes/SSD-Data/aegis-data/conda-envs/era5/bin/python
+cd $E3SM_ROOT/aegis/phase1/scripts
+$PY era5_forcing.py domain                          # domain.lnd.era5_texas_55x65.c261126.nc
+$PY era5_forcing.py fetch 2010 2017 --workers 6     # resumable per month; ~2 GB/month, ~200 GB
+$PY era5_forcing.py convert 2010 2017               # -> $DIN/atm/datm7/atm_forcing.datm7.ERA5.0.25d.texas.c261126
+$PY era5_forcing.py streams 2010 2017               # -> forcing/era5/user_datm.streams.txt.ELMERA5.*
+FORCING=era5 ./case_spinup.sh                       # then the same steps as NLDAS-2 above
+```
+
+The fetch is bandwidth bound (mean-flux files are stored as global 12-h
+chunks, so whole chunks are read): ~44 min for one month on one connection,
+~5.5 MB/s with 6 workers over the Cisco VPN, i.e. ~10 h for 2010–2017.
+Years and segment dates in `case_spinup.sh`/`case_production.sh` are shared
+with NLDAS-2 (2010–2014 loop, 2010–2017 production).
 
 ## Gauge matching
 
