@@ -21,13 +21,14 @@ import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 
-from p1lib import GAUGES, day_strings, open_hist  # noqa: E402
+from p1lib import GAUGES, day_strings, forcing_label, open_hist  # noqa: E402
 
 OI = {"black": "#000000", "orange": "#E69F00", "sky": "#56B4E9", "green": "#009E73",
       "yellow": "#F0E442", "blue": "#0072B2", "vermillion": "#D55E00", "purple": "#CC79A7"}
 HARVEY = ("2017-08-25", "2017-09-01")
 HOUSTON = (29.76, -95.37)
-SUBTITLE = "E3SM ELM-SP + MOSART r05, NLDAS-2 forcing, uncalibrated baseline"
+FORCING = "NLDAS-2"  # both set from the case name in main()
+SUBTITLE = "E3SM ELM-SP + MOSART r05, {} forcing, uncalibrated baseline"
 PANEL_NOTE = {
     "08066500": "no reservoirs in the model (Lake Livingston upstream)",
     "08068000": "shared 1-cell headwater cell (no upstream routing); same model series as Cypress Ck",
@@ -158,7 +159,7 @@ def spinup_plot(post, figdir):
         ax.plot(yrs, y, "o-", color=OI["blue"], ms=4)
         for b in range(cy, y.size, cy):
             ax.axvline(b + 0.5, color="0.7", lw=0.8, ls=":")
-        ax.set_xlabel("Spin-up year (NLDAS-2 2010-2014 looped)")
+        ax.set_xlabel(f"Spin-up year ({FORCING} 2010-2014 looped)")
         ax.set_ylabel(f"Domain-mean annual {v} ({unit})")
         if v == "ZWT":
             ax.invert_yaxis()
@@ -194,6 +195,9 @@ def main():
     ap.add_argument("--map-days", default="2017-08-24,2017-08-31")
     ap.add_argument("--hydro-range", default="2017-06-01,2017-09-30")
     a = ap.parse_args()
+    global FORCING, SUBTITLE
+    FORCING = forcing_label(a.case)
+    SUBTITLE = SUBTITLE.format(FORCING)
     os.makedirs(a.figdir, exist_ok=True)
     w = a.which.split(",")
     if "hydro" in w:

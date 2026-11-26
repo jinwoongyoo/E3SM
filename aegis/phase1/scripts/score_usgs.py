@@ -40,7 +40,7 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
-from p1lib import GAUGES, day_strings, match_gauge, open_hist, terminal_outlets
+from p1lib import GAUGES, day_strings, forcing_label, match_gauge, open_hist, terminal_outlets
 
 # name: (start, end, time basis of the model daily means)
 PERIODS = {
@@ -172,13 +172,13 @@ def main():
     res = {
         "case": a.case, "model_variable": "RIVER_DISCHARGE_OVER_LAND_LIQ (MOSART daily, m3/s)",
         "obs": "USGS NWIS daily mean discharge (00060, stat 00003), converted to m3/s",
-        "calendar_note": "model noleap; Feb 29 obs dropped (NLDAS-2 forcing also omits Feb 29)",
+        "calendar_note": f"model noleap; Feb 29 obs dropped ({forcing_label(a.case)} forcing also omits Feb 29)",
         "time_basis_note": (f"USGS daily values are {a.local_tz} local days. Model daily means are UTC days "
                             "(h1) except for periods marked local, which use hourly h2 averaged over local "
                             "days (complete days only). sim_m3s in gauge_daily_sim_obs.csv is UTC-day; "
                             "sim_localday_m3s is the local-day series where hourly output exists."),
         "peak_tie_rule": "first (earliest) day of a tie",
-        "caveat": ("Uncalibrated ELM SP + MOSART at 0.5 deg forced by NLDAS-2; reservoirs/withdrawals "
+        "caveat": (f"Uncalibrated ELM SP + MOSART at 0.5 deg forced by {forcing_label(a.case)}; reservoirs/withdrawals "
                    "not represented; small San Jacinto tributaries are below the grid scale."),
         "gauges": gauges,
     }

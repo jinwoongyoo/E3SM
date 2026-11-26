@@ -25,7 +25,7 @@ import os
 import numpy as np
 import xarray as xr
 
-from p1lib import open_hist
+from p1lib import forcing_label, open_hist
 
 DIN = os.environ.get("DIN_LOC_ROOT", "/Volumes/SSD-Data/aegis-data/e3sm-work/inputdata")
 DEFAULT_MAP = os.path.join(DIN, "cpl/gridmaps/ne30pg2/map_r05_to_ne30pg2_traave.20231130.nc")
@@ -107,7 +107,7 @@ def main():
         attrs["cell_methods"] = "ncol: land-area-weighted conservative mean (map_r05_to_ne30pg2_traave)"
         out[v] = (("time", *other, "ncol"), y, attrs)
     out.attrs.update(
-        title="Aegis Phase 1 E3SM ELM (SP, NLDAS-2) Texas baseline remapped to ne30pg2",
+        title=f"Aegis Phase 1 E3SM ELM (SP, {forcing_label(a.case)}) Texas baseline remapped to ne30pg2",
         source_case=a.case, source_tape=a.tape, n_source_files=len(files),
         map_file=os.path.basename(a.map),
         note=("Uncalibrated baseline; only ne30pg2 columns overlapping the Texas r05 box are "

@@ -170,6 +170,8 @@ $PY era5_forcing.py fetch 2010 2017 --workers 6     # resumable per month; ~2 GB
 $PY era5_forcing.py convert 2010 2017               # -> $DIN/atm/datm7/atm_forcing.datm7.ERA5.0.25d.texas.c261126
 $PY era5_forcing.py streams 2010 2017               # -> forcing/era5/user_datm.streams.txt.ELMERA5.*
 FORCING=era5 ./case_spinup.sh                       # then the same steps as NLDAS-2 above
+# post-processing: same commands with C=p1tx.era5.prod, R=$WORK/scratch/$C/run and
+# $P1/post/era5, $P1/figures/era5 as output dirs (titles take the forcing from the case name)
 ```
 
 The fetch is bandwidth bound (mean-flux files are stored as global 12-h

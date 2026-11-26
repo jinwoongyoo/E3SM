@@ -19,6 +19,11 @@ GAUGES = {
 }
 
 
+def forcing_label(case):
+    """Forcing name for titles, from the case name (p1tx.<forcing>.*)."""
+    return "ERA5" if "era5" in case.lower().split(".") else "NLDAS-2"
+
+
 def match_gauge(lat2d, lon2d, area_km2_2d, glat, glon, garea_km2, win=1, penalty=0.25, valid=None,
                 outlet2d=None):
     """Return (j, i, model_area_km2) of the MOSART cell that best matches the gauge.
