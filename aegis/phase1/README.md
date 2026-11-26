@@ -166,7 +166,7 @@ Validated against E3SM's own 1981-03 files over the box (all 744 steps,
 PY=/Volumes/SSD-Data/aegis-data/conda-envs/era5/bin/python
 cd $E3SM_ROOT/aegis/phase1/scripts
 $PY era5_forcing.py domain                          # domain.lnd.era5_texas_55x65.c261126.nc
-$PY era5_forcing.py fetch 2010 2017 --workers 6     # resumable per month; ~2 GB/month, ~200 GB
+$PY era5_forcing.py fetch 2010 2017 --workers 6     # resumable per month; ~4 GB/month read
 $PY era5_forcing.py convert 2010 2017               # -> $DIN/atm/datm7/atm_forcing.datm7.ERA5.0.25d.texas.c261126
 $PY era5_forcing.py streams 2010 2017               # -> forcing/era5/user_datm.streams.txt.ELMERA5.*
 FORCING=era5 ./case_spinup.sh                       # then the same steps as NLDAS-2 above
@@ -174,9 +174,13 @@ FORCING=era5 ./case_spinup.sh                       # then the same steps as NLD
 # $P1/post/era5, $P1/figures/era5 as output dirs (titles take the forcing from the case name)
 ```
 
-The fetch is bandwidth bound (mean-flux files are stored as global 12-h
-chunks, so whole chunks are read): ~44 min for one month on one connection,
-~5.5 MB/s with 6 workers over the Cisco VPN, i.e. ~10 h for 2010–2017.
+The fetch is bandwidth bound. The five mean-flux fields are stored as one
+global chunk per 12-h forecast, so whole chunks are read: ~3.9 GB/month,
+~370 GB for 2010–2017. Measured: 6 months per ~1.7 h with 6 workers at
+~9.5 MB/s (≈ 27 h for 2010–2017; the analysis fields are ~3 min/month).
+Not faster: the GDEX THREDDS OPeNDAP server (server-side box subset) answers
+~11 s per 6 forecasts and returns HTTP 429 under sustained use (~50 min/month);
+CDS queues one request per account; the old `era5-pds` bucket is closed.
 Years and segment dates in `case_spinup.sh`/`case_production.sh` are shared
 with NLDAS-2 (2010–2014 loop, 2010–2017 production).
 
