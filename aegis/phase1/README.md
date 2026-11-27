@@ -172,6 +172,7 @@ $PY era5_forcing.py streams 2010 2017               # -> forcing/era5/user_datm.
 FORCING=era5 ./case_spinup.sh                       # then the same steps as NLDAS-2 above
 # post-processing: same commands with C=p1tx.era5.prod, R=$WORK/scratch/$C/run and
 # $P1/post/era5, $P1/figures/era5 as output dirs (titles take the forcing from the case name)
+$TOOLS_PY compare_forcing.py $P1/post $P1/post/era5 $P1/figures/compare   # NLDAS-2 vs ERA5
 ```
 
 The fetch is bandwidth bound. The five mean-flux fields are stored as one
@@ -392,6 +393,92 @@ c013351b0d78f47cb6f76371c33dea572629b11af9c1fb9d6438945da38b3990  post/scores.cs
 30bd267be9f23c2f09b3653513248b00d7a66a37960fe72474c752bf835816a9  post/gauge_daily_sim_obs.csv
 0ea248236bfb81254fa8893f90e0a8622056634de181de52b49130af7f4bd207  post/spinup_drift.json
 ```
+
+### ERA5 runs (`p1tx.era5.*`, `$P1/post/era5`, `$P1/figures/era5`)
+
+The same configuration, spin-up policy, production segments and
+post-processing as NLDAS-2, with ERA5 forcing (see "ERA5 forcing" above).
+Only the forcing differs.
+
+**Spin-up.**
+
+* After 20 years the TWS drift was +2.23 mm/yr, which fails the criterion;
+  ZWT passed. This is the same pattern NLDAS-2 showed (+1.86 mm/yr).
+* After the 10-year extension the run passes at 30 years. Drifts over
+  years 21–30:
+  * TWS −0.38 mm/yr. 43% of cells meet the criterion; the 95th-percentile
+    cell drift is 10.3 mm/yr.
+  * ZWT +0.0073 m/yr. 90% of cells meet the criterion; the 95th-percentile
+    cell drift is 0.061 m/yr.
+* Each 5-year segment took 999–1,141 s (380–430 simulated years per day).
+  The 30 years took 6,257 s (1.7 h).
+
+**Production.** Hybrid from 0031-01-01.
+
+| Segment | Run time |
+|---|---|
+| A | 2,874 s (229 simulated years per day) |
+| B | 29 s |
+| C | 11 s |
+
+The output covers the same days and hours as the NLDAS-2 run: 2,828 daily
+records and 744 hourly records.
+
+**Forcing over the domain.**
+
+* 2010–2014 domain means, NLDAS-2 vs ERA5:
+
+  | Field | NLDAS-2 | ERA5 |
+  |---|---|---|
+  | Rain (mm/s) | 1.676e-5 | 1.636e-5 |
+  | FSDS (W/m²) | 222.9 | 223.9 |
+  | FLDS (W/m²) | 324.7 | 329.2 |
+  | TBOT (K) | 292.1 | 291.5 |
+  | QBOT (kg/kg) | 0.0076 | 0.0082 |
+
+* Harvey rainfall, Aug 25 – Sep 1 2017, remapped to ne30pg2:
+  * Domain mean: ERA5 43.7 mm, NLDAS-2 46.6 mm.
+  * Wettest column: ERA5 517 mm, NLDAS-2 585 mm.
+
+  ERA5 is smoother and lower at the peak, as expected at 0.25° from a
+  reanalysis.
+
+Scores use the same windows and time basis as the NLDAS-2 table. ERA5 is
+also UTC, and the Harvey window is scored on local days from the hourly
+output. In the table below, N is NLDAS-2 and E is ERA5.
+
+| USGS gauge | KGE 2016-01→2017-09 (N / E) | KGE Aug 15–Sep 13 (N / E) | NSE Aug 15–Sep 13 (N / E) | Bias Aug 15–Sep 13 (N / E) | Peak sim/obs (N / E) | Peak timing (N / E) |
+|---|---|---|---|---|---|---|
+| 08114000 Brazos @ Richmond | 0.67 / 0.55 | 0.69 / 0.55 | 0.75 / 0.66 | +28% / −16% | 1.03 / 0.86 | −3 d / −2 d |
+| 08066500 Trinity @ Romayor | 0.60 / 0.62 | −0.69 / −0.12 | −1.95 / −0.47 | +135% / +101% | 2.50 / 1.74 | +2 d / +1 d |
+| 08068000 W Fk San Jacinto nr Conroe | 0.28 / 0.14 | 0.26 / −0.13 | 0.29 / 0.16 | −1% / −72% | 0.30 / 0.13 | −1 d / 0 d |
+| 08069000 Cypress Ck nr Westfield | 0.26 / −0.70 | −0.07 / 0.23 | −0.05 / 0.50 | +100% / −44% | 0.89 / 0.39 | 0 d / +1 d |
+| 08162000 Colorado @ Wharton | 0.29 / 0.34 | 0.25 / 0.51 | 0.46 / 0.70 | −29% / −10% | 0.37 / 0.57 | −1 d / −1 d |
+
+Neither forcing is better at every gauge:
+
+* **Brazos.** NLDAS-2 is better. Both runs time the peak within 2–3 days;
+  ERA5 peaks 14% low.
+* **Trinity.** ERA5 is less wrong: its peak is 1.74 times observed, against
+  2.50 for NLDAS-2. The missing Lake Livingston regulation still dominates.
+* **Colorado.** ERA5 is better: KGE 0.51 against 0.25, peak 0.57 against
+  0.37 of observed. Both runs are still well below the observed peak.
+* **San Jacinto** (one shared 0.5° cell). ERA5's Harvey peak is only 330
+  m³/s, against 748 m³/s for NLDAS-2 and 2,517 / 841 m³/s observed.
+  * ERA5 has no second peak on Sep 1 and no long recession. Because of this
+    its Cypress Ck window scores look better (NSE 0.50), even though its peak
+    is lower.
+  * Over the full period, the simulated maximum for this cell falls in late
+    May 2016, not during Harvey. That is why the full-period timing errors
+    are −458 d and −457 d. The ERA5 full-period KGE for Cypress Ck is −0.70.
+* **Low flow.** Recession and low-flow overestimation are common to both
+  runs. They come from the model configuration, not the forcing.
+
+Comparison products are in `$P1/figures/compare`, made by
+`scripts/compare_forcing.py`:
+
+* `forcing_comparison.csv`: all metrics side by side.
+* `hydrographs_forcing_compare.png`: USGS vs both runs, Aug–Sep 2017.
 
 ### Limitations (summary)
 
